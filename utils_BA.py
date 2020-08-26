@@ -59,6 +59,7 @@ def project(points, camera_params, offset):
 
     K = np.zeros((f.shape[0], 3, 3))
     indices = np.arange(f.shape[0])
+
     # Let skew stay 0
     K[indices, 0, 0] = f[indices]
     K[indices, 1, 1] = f[indices]
@@ -70,9 +71,8 @@ def project(points, camera_params, offset):
 
     ones = np.ones((points.shape[0], 1))
     homog_points = np.concatenate((points, ones), axis=1)
-
-    points_proj = np.matmul(P, homog_points[:, :, np.newaxis])
-    points_proj = np.squeeze(points_proj[:, 0:2])
+    points_proj = np.squeeze(np.matmul(P, homog_points[:, :, np.newaxis]))
+    points_proj = points_proj[:, 0:2]
     return points_proj
 
 
