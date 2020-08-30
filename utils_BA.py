@@ -45,7 +45,7 @@ def project_og(points, camera_params):
 
 
 # Linear projection
-def project(points, camera_params):
+def project(points, camera_params, offset):
     """Convert 3-D points to 2-D by projecting onto images."""
     # -----Get extrinsics------
     rot_vec = R.from_rotvec(camera_params[:, :3])
@@ -54,52 +54,56 @@ def project(points, camera_params):
 
     # ----Get intrinsics----
     f = camera_params[:, 6]
-    p_x = camera_params[:, 7]
-    p_y = camera_params[:, 8]
+    p_x = offset[:, 0]
+    p_y = offset[:, 1]
 
     K = np.zeros((f.shape[0], 3, 3))
     indices = np.arange(f.shape[0])
+
+    # Let skew stay 0
     K[indices, 0, 0] = f[indices]
     K[indices, 1, 1] = f[indices]
     K[indices, 0, 2] = p_x[indices]
     K[indices, 1, 2] = p_y[indices]
+    K[indices, 2, 2] = 1
 
-    # Let skew be 0
     P = np.matmul(K, np.concatenate((rot_mat, t[:, :, np.newaxis]), axis=2))
 
     ones = np.ones((points.shape[0], 1))
     homog_points = np.concatenate((points, ones), axis=1)
-
-    points_proj = np.squeeze(np.matmul(P, homog_points[:, :, np.newaxis]))[:, 0:2]
+    points_proj = np.squeeze(np.matmul(P, homog_points[:, :, np.newaxis]))
+    points_proj = points_proj[:, 0:2]
     return points_proj
 
 
 # Linear projection instead of nonlinear w/ distortion
 
 
-def fun(params, n_cameras, n_points, camera_indices, point_indices, points_2d):
+def fun(params, n_cameras, n_points, camera_indices, point_indices, points_2d, offset):
     """Compute residuals.
     
     `params` contains camera parameters and 3-D coordinates.
     """
-    camera_params = params[: n_cameras * 9].reshape((n_cameras, 9))
-    points_3d = params[n_cameras * 9 :].reshape((n_points, 3))
-    points_proj = project(points_3d[point_indices], camera_params[camera_indices])
+    camera_params = params[: n_cameras * 7].reshape((n_cameras, 7))
+    points_3d = params[n_cameras * 7 :].reshape((n_points, 3))
+    points_proj = project(
+        points_3d[point_indices], camera_params[camera_indices], offset[camera_indices]
+    )
     return (points_proj - points_2d).ravel()
 
 
 def bundle_adjustment_sparsity(n_cameras, n_points, camera_indices, point_indices):
     m = camera_indices.size * 2
-    n = n_cameras * 9 + n_points * 3
+    n = n_cameras * 7 + n_points * 3
     A = lil_matrix((m, n), dtype=int)
 
     i = np.arange(camera_indices.size)
-    for s in range(9):
-        A[2 * i, camera_indices * 9 + s] = 1
-        A[2 * i + 1, camera_indices * 9 + s] = 1
+    for s in range(7):
+        A[2 * i, camera_indices * 7 + s] = 1
+        A[2 * i + 1, camera_indices * 7 + s] = 1
 
     for s in range(3):
-        A[2 * i, n_cameras * 9 + point_indices * 3 + s] = 1
-        A[2 * i + 1, n_cameras * 9 + point_indices * 3 + s] = 1
+        A[2 * i, n_cameras * 7 + point_indices * 3 + s] = 1
+        A[2 * i + 1, n_cameras * 7 + point_indices * 3 + s] = 1
 
     return A

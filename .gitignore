@@ -4,3 +4,6 @@ images_test
 rick_plots
 __pycache__/
 BA_result_Rick_04_11
+epipolar_lines/
+epipolar_video.mp4
+reconstruction.mp4
