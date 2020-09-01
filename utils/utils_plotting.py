@@ -270,7 +270,7 @@ def plot_image_labels(
         # indices 0 and 2 correspond to the bottom image.
         # Recall, we subtracted out the height of the top
         # image earlier.
-        if i % 2 == 0:
+        if i % 2 != 0:
             y_coord += top_img_height
         ax.scatter(x_coord, y_coord, color=color_list[i])
 
