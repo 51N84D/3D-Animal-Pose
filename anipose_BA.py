@@ -200,6 +200,8 @@ class Camera:
         self.set_translation(tvec)
         self.set_name(name)
         self.extra_dist = extra_dist
+        self.init_rot = rvec
+        self.init_trans = tvec
 
     def get_dict(self):
         return {
@@ -661,6 +663,8 @@ class CameraGroup:
             cam = self.cameras[i]
             a = i * n_cam_params
             b = (i + 1) * n_cam_params
+            params[a : a + 3] = cam.init_rot
+            params[a + 3 : a + 6] = cam.init_trans
             cam.set_params(params[a:b])
 
         n_cams = len(self.cameras)
