@@ -11,6 +11,9 @@ we loop over time points, and present the images along with our 3D plot
 figure should be presented using """
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.graph_objs as go
+import cv2
+
 
 # this function assumes that we're plotting the first n frames of our dictionaries
 def video_recover_plots(
@@ -299,4 +302,95 @@ def plot_3d_points(coord_list_of_dicts, lims_dict, index, color_list, ax):
             markersize=4,
             label=None,
         )
+
+
+def vector_plot(
+    tvects, is_vect=True, orig=[0, 0, 0], names=["x", "y", "z"], cam_name=""
+):
+    """Plot vectors using plotly"""
+
+    if is_vect:
+        if not hasattr(orig[0], "__iter__"):
+            coords = [[orig, np.sum([orig, v], axis=0)] for v in tvects]
+        else:
+            coords = [[o, np.sum([o, v], axis=0)] for o, v in zip(orig, tvects)]
+    else:
+        coords = tvects
+
+    names = ["x", "y", "z"]
+    colors = ["red", "blue", "green"]
+
+    data = []
+    for i, c in enumerate(coords):
+        X1, Y1, Z1 = zip(c[0])
+        X2, Y2, Z2 = zip(c[1])
+        vector = go.Scatter3d(
+            x=[X1[0], X2[0]],
+            y=[Y1[0], Y2[0]],
+            z=[Z1[0], Z2[0]],
+            text=[cam_name, names[i]],
+            marker=dict(size=[0, 5], color="blue"),
+            line=dict(width=5, color=colors[i]),
+            mode="lines+markers+text",
+            name=names[i] + cam_name,
+        )
+        data.append(vector)
+
+    return data
+    # fig = go.Figure(data=data,layout=layout)
+    # fig.show()
+
+
+def draw_circles(img, points):
+    for point in points:
+        cv2.circle(img, (point[0], point[1]), 10, (255, 0, 255), -1)
+    return img
+
+
+def slope(x1, y1, x2, y2):
+    ###finding slope
+    if x2 != x1:
+        return (y2 - y1) / (x2 - x1)
+    else:
+        return "NA"
+
+
+def drawLine(image, x1, y1, x2, y2):
+
+    m = slope(x1, y1, x2, y2)
+    h, w = image.shape[:2]
+    if m != "NA":
+        ### here we are essentially extending the line to x=0 and x=width
+        ### and calculating the y associated with it
+        ##starting point
+        px = 0
+        py = -(x1 - 0) * m + y1
+        ##ending point
+        qx = w
+        qy = -(x2 - w) * m + y2
+    else:
+        ### if slope is zero, draw a line with x=x1 and y=0 and y=height
+        px, py = x1, 0
+        qx, qy = x1, h
+    image = cv2.line(image, (int(px), int(py)), (int(qx), int(qy)), (255, 255, 255), 2)
+    return image
+
+
+def skew(vector):
+    """
+    this function returns a numpy array with the skew symmetric cross product matrix for vector.
+    the skew symmetric cross product matrix is defined such that
+    np.cross(a, b) = np.dot(skew(a), b)
+
+    :param vector: An array like vector to create the skew symmetric cross product matrix for
+    :return: A numpy array of the skew symmetric cross product vector
+    """
+
+    return np.array(
+        [
+            [0, -vector[2], vector[1]],
+            [vector[2], 0, -vector[0]],
+            [-vector[1], vector[0], 0],
+        ]
+    )
 

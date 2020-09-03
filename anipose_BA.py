@@ -6,6 +6,7 @@ from numba import jit
 import itertools
 from tqdm import trange
 from pprint import pprint
+import time
 
 
 def make_M(rvec, tvec):
@@ -808,5 +809,313 @@ class CameraGroup:
         error_fun = self._error_fun_bundle
 
         f0 = error_fun(x0, p2ds, n_cam_params, extra)
+        n_cams = len(self.cameras)
+        sub = n_cam_params * n_cams
 
-        return f0
+        n3d = p2ds.shape[1] * 3
+        p3ds = x0[sub : sub + n3d].reshape(-1, 3)
+
+        return f0, p3ds
+
+    def _error_fun_triangulation(
+        self,
+        params,
+        p2ds,
+        constraints=[],
+        constraints_weak=[],
+        scores=None,
+        scale_smooth=10000,
+        scale_length=1,
+        scale_length_weak=0.2,
+        reproj_error_threshold=100,
+        reproj_loss="soft_l1",
+        n_deriv_smooth=1,
+    ):
+        n_cams, n_frames, n_joints, _ = p2ds.shape
+
+        n_3d = n_frames * n_joints * 3
+        n_constraints = len(constraints)
+        n_constraints_weak = len(constraints_weak)
+
+        # load params
+        p3ds = params[:n_3d].reshape((n_frames, n_joints, 3))
+        joint_lengths = np.array(params[n_3d : n_3d + n_constraints])
+        joint_lengths_weak = np.array(params[n_3d + n_constraints :])
+
+        # reprojection errors
+        p3ds_flat = p3ds.reshape(-1, 3)
+        p2ds_flat = p2ds.reshape((n_cams, -1, 2))
+        errors = self.reprojection_error(p3ds_flat, p2ds_flat)
+        if scores is not None:
+            scores_flat = scores.reshape((n_cams, -1))
+            errors = errors * scores_flat[:, :, None]
+        errors_reproj = errors[~np.isnan(p2ds_flat)]
+
+        rp = reproj_error_threshold
+        errors_reproj = np.abs(errors_reproj)
+        if reproj_loss == "huber":
+            bad = errors_reproj > rp
+            errors_reproj[bad] = rp * (2 * np.sqrt(errors_reproj[bad] / rp) - 1)
+        elif reproj_loss == "linear":
+            pass
+        elif reproj_loss == "soft_l1":
+            errors_reproj = rp * 2 * (np.sqrt(1 + errors_reproj / rp) - 1)
+
+        # temporal constraint
+        errors_smooth = np.diff(p3ds, n=n_deriv_smooth, axis=0).ravel() * scale_smooth
+
+        # joint length constraint
+        errors_lengths = np.empty((n_constraints, n_frames), dtype="float64")
+        for cix, (a, b) in enumerate(constraints):
+            lengths = np.linalg.norm(p3ds[:, a] - p3ds[:, b], axis=1)
+            expected = joint_lengths[cix]
+            errors_lengths[cix] = 100 * (lengths - expected) / expected
+        errors_lengths = errors_lengths.ravel() * scale_length
+
+        errors_lengths_weak = np.empty((n_constraints_weak, n_frames), dtype="float64")
+        for cix, (a, b) in enumerate(constraints_weak):
+            lengths = np.linalg.norm(p3ds[:, a] - p3ds[:, b], axis=1)
+            expected = joint_lengths_weak[cix]
+            errors_lengths_weak[cix] = 100 * (lengths - expected) / expected
+        errors_lengths_weak = errors_lengths_weak.ravel() * scale_length_weak
+
+        return np.hstack(
+            [errors_reproj, errors_smooth, errors_lengths, errors_lengths_weak]
+        )
+
+    def optim_points(
+        self,
+        points,
+        p3ds,
+        constraints=[],
+        constraints_weak=[],
+        scale_smooth=2,
+        scale_length=0,
+        scale_length_weak=0,
+        reproj_error_threshold=15,
+        reproj_loss="soft_l1",
+        n_deriv_smooth=1,
+        scores=None,
+        verbose=False,
+    ):
+        """
+        Take in an array of 2D points of shape CxNxJx2,
+        an array of 3D points of shape NxJx3,
+        and an array of constraints of shape Kx2, where
+        C: number of camera
+        N: number of frames
+        J: number of joints
+        K: number of constraints
+        This function creates an optimized array of 3D points of shape NxJx3.
+        Example constraints:
+        constraints = [[0, 1], [1, 2], [2, 3]]
+        (meaning that lengths of segments 0->1, 1->2, 2->3 are all constant)
+        """
+        assert points.shape[0] == len(self.cameras), (
+            "Invalid points shape, first dim should be equal to"
+            " number of cameras ({}), but shape is {}".format(
+                len(self.cameras), points.shape
+            )
+        )
+
+        n_cams, n_frames, n_joints, _ = points.shape
+        constraints = np.array(constraints)
+        constraints_weak = np.array(constraints_weak)
+
+        p3ds_intp = np.apply_along_axis(interpolate_data, 0, p3ds)
+
+        p3ds_med = np.apply_along_axis(medfilt_data, 0, p3ds_intp, size=7)
+
+        default_smooth = 1.0 / np.mean(np.abs(np.diff(p3ds_med, axis=0)))
+        scale_smooth_full = scale_smooth * default_smooth
+
+        t1 = time.time()
+
+        x0 = self._initialize_params_triangulation(
+            p3ds_intp, constraints, constraints_weak
+        )
+
+        jac = self._jac_sparsity_triangulation(
+            points, constraints, constraints_weak, n_deriv_smooth
+        )
+
+        opt2 = optimize.least_squares(
+            self._error_fun_triangulation,
+            x0=x0,
+            jac_sparsity=jac,
+            loss="linear",
+            ftol=1e-3,
+            verbose=2 * verbose,
+            args=(
+                points,
+                constraints,
+                constraints_weak,
+                scores,
+                scale_smooth_full,
+                scale_length,
+                scale_length_weak,
+                reproj_error_threshold,
+                reproj_loss,
+                n_deriv_smooth,
+            ),
+        )
+
+        p3ds_new2 = opt2.x[: p3ds.size].reshape(p3ds.shape)
+
+        t2 = time.time()
+
+        if verbose:
+            print("optimization took {:.2f} seconds".format(t2 - t1))
+
+        return p3ds_new2
+
+    def triangulate_optim(
+        self, points, init_ransac=False, init_progress=False, **kwargs
+    ):
+        """
+        Take in an array of 2D points of shape CxNxJx2, and an array of constraints of shape Kx2, where
+        C: number of camera
+        N: number of frames
+        J: number of joints
+        K: number of constraints
+        This function creates an optimized array of 3D points of shape NxJx3.
+        Example constraints:
+        constraints = [[0, 1], [1, 2], [2, 3]]
+        (meaning that lengths of segments 0->1, 1->2, 2->3 are all constant)
+        """
+
+        assert points.shape[0] == len(self.cameras), (
+            "Invalid points shape, first dim should be equal to"
+            " number of cameras ({}), but shape is {}".format(
+                len(self.cameras), points.shape
+            )
+        )
+
+        n_cams, n_frames, n_joints, _ = points.shape
+        # constraints = np.array(constraints)
+        # constraints_weak = np.array(constraints_weak)
+
+        points_shaped = points.reshape(n_cams, n_frames * n_joints, 2)
+        if init_ransac:
+            p3ds, picked, p2ds, errors = self.triangulate_ransac(
+                points_shaped, progress=init_progress
+            )
+            points = p2ds.reshape(points.shape)
+        else:
+            p3ds = self.triangulate(points_shaped, progress=init_progress)
+        p3ds = p3ds.reshape((n_frames, n_joints, 3))
+
+        c = np.isfinite(p3ds[:, :, 0])
+        if np.sum(c) < 20:
+            print("warning: not enough 3D points to run optimization")
+            return p3ds
+
+        return self.optim_points(points, p3ds, **kwargs)
+
+    def _initialize_params_triangulation(
+        self, p3ds, constraints=[], constraints_weak=[]
+    ):
+        joint_lengths = np.empty(len(constraints), dtype="float64")
+        joint_lengths_weak = np.empty(len(constraints_weak), dtype="float64")
+
+        for cix, (a, b) in enumerate(constraints):
+            lengths = np.linalg.norm(p3ds[:, a] - p3ds[:, b], axis=1)
+            joint_lengths[cix] = np.median(lengths)
+
+        for cix, (a, b) in enumerate(constraints_weak):
+            lengths = np.linalg.norm(p3ds[:, a] - p3ds[:, b], axis=1)
+            joint_lengths_weak[cix] = np.median(lengths)
+
+        all_lengths = np.hstack([joint_lengths, joint_lengths_weak])
+        med = np.median(all_lengths)
+        if med == 0:
+            med = 1e-3
+
+        mad = np.median(np.abs(all_lengths - med))
+
+        joint_lengths[joint_lengths == 0] = med
+        joint_lengths_weak[joint_lengths_weak == 0] = med
+        joint_lengths[joint_lengths > med + mad * 5] = med
+        joint_lengths_weak[joint_lengths_weak > med + mad * 5] = med
+
+        return np.hstack([p3ds.ravel(), joint_lengths, joint_lengths_weak])
+
+    def _jac_sparsity_triangulation(
+        self, p2ds, constraints=[], constraints_weak=[], n_deriv_smooth=1
+    ):
+        n_cams, n_frames, n_joints, _ = p2ds.shape
+        n_constraints = len(constraints)
+        n_constraints_weak = len(constraints_weak)
+
+        p2ds_flat = p2ds.reshape((n_cams, -1, 2))
+
+        point_indices = np.zeros(p2ds_flat.shape, dtype="int32")
+        for i in range(p2ds_flat.shape[1]):
+            point_indices[:, i] = i
+
+        point_indices_3d = np.arange(n_frames * n_joints).reshape((n_frames, n_joints))
+
+        good = ~np.isnan(p2ds_flat)
+        n_errors_reproj = np.sum(good)
+        n_errors_smooth = (n_frames - n_deriv_smooth) * n_joints * 3
+        n_errors_lengths = n_constraints * n_frames
+        n_errors_lengths_weak = n_constraints_weak * n_frames
+
+        n_errors = (
+            n_errors_reproj + n_errors_smooth + n_errors_lengths + n_errors_lengths_weak
+        )
+
+        n_3d = n_frames * n_joints * 3
+        n_params = n_3d + n_constraints + n_constraints_weak
+
+        point_indices_good = point_indices[good]
+
+        A_sparse = dok_matrix((n_errors, n_params), dtype="int16")
+
+        # constraints for reprojection errors
+        ix_reproj = np.arange(n_errors_reproj)
+        for k in range(3):
+            A_sparse[ix_reproj, point_indices_good * 3 + k] = 1
+
+        # sparse constraints for smoothness in time
+        frames = np.arange(n_frames - n_deriv_smooth)
+        for j in range(n_joints):
+            for n in range(n_deriv_smooth + 1):
+                pa = point_indices_3d[frames, j]
+                pb = point_indices_3d[frames + n, j]
+                for k in range(3):
+                    A_sparse[n_errors_reproj + pa * 3 + k, pb * 3 + k] = 1
+
+        ## -- strong constraints --
+        # joint lengths should change with joint lengths errors
+        start = n_errors_reproj + n_errors_smooth
+        frames = np.arange(n_frames)
+        for cix, (a, b) in enumerate(constraints):
+            A_sparse[start + cix * n_frames + frames, n_3d + cix] = 1
+
+        # points should change accordingly to match joint lengths too
+        frames = np.arange(n_frames)
+        for cix, (a, b) in enumerate(constraints):
+            pa = point_indices_3d[frames, a]
+            pb = point_indices_3d[frames, b]
+            for k in range(3):
+                A_sparse[start + cix * n_frames + frames, pa * 3 + k] = 1
+                A_sparse[start + cix * n_frames + frames, pb * 3 + k] = 1
+
+        ## -- weak constraints --
+        # joint lengths should change with joint lengths errors
+        start = n_errors_reproj + n_errors_smooth + n_errors_lengths
+        frames = np.arange(n_frames)
+        for cix, (a, b) in enumerate(constraints_weak):
+            A_sparse[start + cix * n_frames + frames, n_3d + n_constraints + cix] = 1
+
+        # points should change accordingly to match joint lengths too
+        frames = np.arange(n_frames)
+        for cix, (a, b) in enumerate(constraints_weak):
+            pa = point_indices_3d[frames, a]
+            pb = point_indices_3d[frames, b]
+            for k in range(3):
+                A_sparse[start + cix * n_frames + frames, pa * 3 + k] = 1
+                A_sparse[start + cix * n_frames + frames, pb * 3 + k] = 1
+
+        return A_sparse
