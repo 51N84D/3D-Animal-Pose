@@ -254,7 +254,7 @@ def plot_reproj_traces(points_2d, points_proj, frame_range, title, savename):
 
 
 def plot_image_labels(
-    image, coord_list_of_dicts, index, color_list, ax=None, top_img_height=0
+    image, coord_list_of_dicts, index, color_list, ax=None, top_img_height=0, pad=10
 ):
     """ToDo: add multiple data sources, so instead of x_arr, y_arr have a list of dicts
     with x,y coords. """
@@ -262,17 +262,18 @@ def plot_image_labels(
     assert len(color_list) == len(coord_list_of_dicts)
 
     ax.axis("off")
-    ax.set_xlim(-10, ncols + 10)  # pad x,y axes
-    ax.set_ylim(nrows + 10, -10)
+    ax.set_xlim(-pad, ncols + pad)  # pad x,y axes
+    ax.set_ylim(nrows + pad, -pad)
 
     ax.imshow(image, "gray")
     for i in range(len(coord_list_of_dicts)):
         x_coord = np.copy(coord_list_of_dicts[i]["x_coords"][index, :])
         y_coord = np.copy(coord_list_of_dicts[i]["y_coords"][index, :])
 
-        # indices 0 and 2 correspond to the bottom image.
+        # indices 1 and 3 correspond to the bottom image.
         # Recall, we subtracted out the height of the top
         # image earlier.
+
         if i % 2 != 0:
             y_coord += top_img_height
         ax.scatter(x_coord, y_coord, color=color_list[i])
@@ -305,7 +306,12 @@ def plot_3d_points(coord_list_of_dicts, lims_dict, index, color_list, ax):
 
 
 def vector_plot(
-    tvects, is_vect=True, orig=[0, 0, 0], names=["x", "y", "z"], cam_name=""
+    tvects,
+    is_vect=True,
+    orig=[0, 0, 0],
+    names=["x", "y", "z"],
+    cam_name="",
+    colors=["red", "blue", "green"],
 ):
     """Plot vectors using plotly"""
 
@@ -316,9 +322,6 @@ def vector_plot(
             coords = [[o, np.sum([o, v], axis=0)] for o, v in zip(orig, tvects)]
     else:
         coords = tvects
-
-    names = ["x", "y", "z"]
-    colors = ["red", "blue", "green"]
 
     data = []
     for i, c in enumerate(coords):
