@@ -406,7 +406,10 @@ def plot_cams_and_points(
     scene_lims=None,
     point_size=2,
     scene_aspect=None,
+    scene_camera=None,
     show_plot=True,
+    skeleton_bp=None,
+    skeleton_lines=None,
 ):
     """
     Plots the coordinate systems of the cameras along with the 3D points
@@ -436,6 +439,44 @@ def plot_cams_and_points(
                 [R_mat[:, 0], R_mat[:, 1], R_mat[:, 2]], orig=t, cam_name=f"cam_{i+1}"
             )
 
+    if skeleton_bp is not None and skeleton_lines is not None:
+        for line in skeleton_lines:
+            from_bp = line[0]
+            to_bp = line[1]
+
+            if isinstance(from_bp, str):
+                vec = [
+                    skeleton_bp[from_bp][i] - skeleton_bp[to_bp][i] for i in range(3)
+                ]
+
+                vec_data = vector_plot(
+                    [vec],
+                    orig=skeleton_bp[to_bp],
+                    cam_name=to_bp,
+                    names=[from_bp],
+                    colors=["green"],
+                )
+                data += vec_data
+
+            elif isinstance(from_bp, tuple):
+                # calculate midpoint
+                vec_from_from = [
+                    skeleton_bp[from_bp[0]][i] - skeleton_bp[from_bp[1]][i]
+                    for i in range(3)
+                ]
+
+                mid = [
+                    skeleton_bp[from_bp[1]][j] + vec_from_from[j] / 2.0
+                    for j in range(3)
+                ]
+
+                vec = [mid[i] - skeleton_bp[to_bp][i] for i in range(3)]
+
+                vec_data = vector_plot(
+                    [vec], orig=mid, cam_name=to_bp, names=["mid"], colors=["red"],
+                )
+                data += vec_data
+
     if scene_lims is not None:
         layout = go.Layout(
             margin=dict(l=4, r=4, b=4, t=4),
@@ -452,6 +493,7 @@ def plot_cams_and_points(
     fig.update_traces(textfont_size=6)
 
     fig.update_layout(scene_aspectmode=scene_aspect)
+    fig.update_layout(scene_camera=scene_camera)
 
     fig.update_layout(
         title={
