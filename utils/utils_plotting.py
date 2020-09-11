@@ -399,7 +399,15 @@ def skew(vector):
     )
 
 
-def plot_cams_and_points(cam_group=None, points_3d=None, title=None):
+def plot_cams_and_points(
+    cam_group=None,
+    points_3d=None,
+    title=None,
+    scene_lims=None,
+    point_size=2,
+    scene_aspect=None,
+    show_plot=True,
+):
     """
     Plots the coordinate systems of the cameras along with the 3D points
     """
@@ -410,7 +418,7 @@ def plot_cams_and_points(cam_group=None, points_3d=None, title=None):
                 y=points_3d[:, 1],
                 z=points_3d[:, 2],
                 mode="markers",
-                marker=dict(size=2),
+                marker=dict(size=point_size),
             )
         ]
 
@@ -428,10 +436,23 @@ def plot_cams_and_points(cam_group=None, points_3d=None, title=None):
                 [R_mat[:, 0], R_mat[:, 1], R_mat[:, 2]], orig=t, cam_name=f"cam_{i+1}"
             )
 
-    layout = go.Layout(margin=dict(l=4, r=4, b=4, t=4))
+    if scene_lims is not None:
+        layout = go.Layout(
+            margin=dict(l=4, r=4, b=4, t=4),
+            scene=dict(
+                xaxis=dict(nticks=4, range=scene_lims[0]),
+                yaxis=dict(nticks=4, range=scene_lims[1]),
+                zaxis=dict(nticks=4, range=scene_lims[2]),
+            ),
+        )
+    else:
+        layout = go.Layout(margin=dict(l=4, r=4, b=4, t=4),)
 
     fig = go.Figure(data=data, layout=layout)
     fig.update_traces(textfont_size=6)
+
+    fig.update_layout(scene_aspectmode=scene_aspect)
+
     fig.update_layout(
         title={
             "text": title,
@@ -442,5 +463,8 @@ def plot_cams_and_points(cam_group=None, points_3d=None, title=None):
         }
     )
 
-    fig.show()
+    if show_plot:
+        fig.show()
+
+    return fig
 
