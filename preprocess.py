@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import cv2
 import re
+from tqdm import tqdm
 
 
 def sorted_nicely(l):
@@ -17,6 +18,8 @@ if __name__ == "__main__":
     BOT_IMG_HEIGHT = 238
 
     images = os.listdir(img_path)
+    if ".DS_Store" in images:
+        images.remove(".DS_Store")
     images = sorted_nicely(images)
     save_dir = Path("./mouseRunningData/")
     top_dir = save_dir / Path("camera1Images/")
@@ -24,8 +27,9 @@ if __name__ == "__main__":
     bot_dir = save_dir / Path("camera2Images/")
     bot_dir.mkdir(parents=True, exist_ok=True)
 
-    for i in images:
-        print(img_path / i)
+    for i in tqdm(images):
+        if "png" not in i:
+            continue
         img = cv2.imread(str(img_path / i), 0)
         top_img = img[:TOP_IMG_HEIGHT, :]
         bot_img = img[TOP_IMG_HEIGHT:, :]
