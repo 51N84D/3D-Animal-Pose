@@ -29,11 +29,11 @@ def video_recover_plots(
     n_frames,
     lim_abs,
 ):
-    """seems to work.this version has the gridspec including 
+    """seems to work.this version has the gridspec including
     what i learned - using p3.Axes3D along with regular ax.plot was helpful.
     in ax.plot I just use x,y,z, coordinates.
     there is no init function like in the 2d plots, we initialize the lines
-    with the vales at the zeroth timepoint """
+    with the vales at the zeroth timepoint"""
     from matplotlib.animation import FuncAnimation
     from matplotlib.gridspec import GridSpec
 
@@ -258,7 +258,7 @@ def plot_image_labels(
     image, coord_list_of_dicts, index, color_list, ax=None, top_img_height=0, pad=10
 ):
     """ToDo: add multiple data sources, so instead of x_arr, y_arr have a list of dicts
-    with x,y coords. """
+    with x,y coords."""
     nrows, ncols = image.shape
     assert len(color_list) == len(coord_list_of_dicts)
 
@@ -473,7 +473,11 @@ def plot_cams_and_points(
                 vec = [mid[i] - skeleton_bp[to_bp][i] for i in range(3)]
 
                 vec_data = vector_plot(
-                    [vec], orig=mid, cam_name=to_bp, names=["mid"], colors=["red"],
+                    [vec],
+                    orig=skeleton_bp[to_bp],
+                    cam_name=to_bp,
+                    names=["mid"],
+                    colors=["brown"],
                 )
                 data += vec_data
 
@@ -487,7 +491,9 @@ def plot_cams_and_points(
             ),
         )
     else:
-        layout = go.Layout(margin=dict(l=4, r=4, b=4, t=4),)
+        layout = go.Layout(
+            margin=dict(l=4, r=4, b=4, t=4),
+        )
 
     fig = go.Figure(data=data, layout=layout)
     fig.update_traces(textfont_size=6)
@@ -509,4 +515,3 @@ def plot_cams_and_points(
         fig.show()
 
     return fig
-
