@@ -1,11 +1,14 @@
+"""
+Code taken and modified from:
+https://github.com/lambdaloop/aniposelib/blob/master/aniposelib/cameras.py
+"""
+
 import cv2
 import numpy as np
 from scipy.sparse import dok_matrix
 from scipy import optimize, signal
-from numba import jit
 import itertools
 from tqdm import trange
-from pprint import pprint
 import time
 
 
@@ -120,7 +123,7 @@ def resample_points(imgp, extra=None, n_samp=25):
             subset = good[i] & good[j]
             n_good = np.sum(subset)
             if n_good > 0:
-                ## pick points, prioritizing points seen by more cameras
+                # pick points, prioritizing points seen by more cameras
                 arr = np.copy(num_cams[subset]).astype("float64")
                 arr += np.random.random(size=arr.shape)
                 picked_ix = np.argsort(-arr)[:n_samp]
@@ -563,9 +566,11 @@ class CameraGroup:
             one_point = True
 
         n_cams, n_points, _ = p2ds.shape
-        assert p3ds.shape == (n_points, 3), (
-            "shapes of 2D and 3D points are not consistent: "
-            "2D={}, 3D={}".format(p2ds.shape, p3ds.shape)
+        assert p3ds.shape == (
+            n_points,
+            3,
+        ), "shapes of 2D and 3D points are not consistent: " "2D={}, 3D={}".format(
+            p2ds.shape, p3ds.shape
         )
 
         errors = np.empty((n_cams, n_points, 2))
