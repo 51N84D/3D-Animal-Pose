@@ -10,7 +10,8 @@ mostly functions that transform the data between DLC form,
 import pickle
 import numpy as np
 import matplotlib.image as mpimg
-
+import cv2
+import os
 
 # pickle utils
 def save_object(obj, filename):
@@ -221,3 +222,24 @@ def make_image_array(img_indexes, flip):
         img_array[:, :, i] = read_image(img_indexes[i], flip)  # function defined above
 
     return img_array
+
+
+def write_video(image_dir, out_file):
+    im_list = os.listdir(image_dir)
+    im_list.sort()
+    if ".DS_Store" in im_list:
+        im_list.remove(".DS_Store")
+
+    img_array = []
+    for filename in im_list:
+        img = cv2.imread(os.path.join(image_dir, filename))
+        height, width, layers = img.shape
+        size = (width, height)
+        img_array.append(img)
+
+    out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*"DIVX"), 5, size)  # 15 fps
+
+    for i in range(len(img_array)):
+        out.write(img_array[i])
+    out.release()
+
