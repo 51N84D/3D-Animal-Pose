@@ -255,11 +255,22 @@ def plot_reproj_traces(points_2d, points_proj, frame_range, title, savename):
 
 
 def plot_image_labels(
-    image, coord_list_of_dicts, index, color_list, ax=None, top_img_height=0, pad=10
+    image,
+    coord_list_of_dicts,
+    index,
+    color_list,
+    label_list=None,
+    ax=None,
+    top_img_height=0,
+    pad=10,
 ):
     """ToDo: add multiple data sources, so instead of x_arr, y_arr have a list of dicts
     with x,y coords."""
-    nrows, ncols = image.shape
+    if len(image.shape) == 2:
+        nrows, ncols = image.shape
+    else:
+        nrows, ncols = image.shape[0:2]
+
     assert len(color_list) == len(coord_list_of_dicts)
 
     ax.axis("off")
@@ -274,10 +285,18 @@ def plot_image_labels(
         # indices 1 and 3 correspond to the bottom image.
         # Recall, we subtracted out the height of the top
         # image earlier.
-
         if i % 2 != 0:
             y_coord += top_img_height
-        ax.scatter(x_coord, y_coord, color=color_list[i])
+
+        if label_list is not None:
+            ax.scatter(
+                x_coord,
+                y_coord,
+                color=color_list[i],
+                label=label_list[i],
+            )
+        else:
+            ax.scatter(x_coord, y_coord, color=color_list[i])
 
 
 def plot_3d_points(coord_list_of_dicts, lims_dict, index, color_list, ax):

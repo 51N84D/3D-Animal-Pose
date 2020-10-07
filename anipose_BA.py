@@ -669,7 +669,9 @@ class CameraGroup:
             a = i * n_cam_params
             b = (i + 1) * n_cam_params
             params[a : a + 3] = cam.init_rot
-            params[a + 3 : a + 6] = cam.init_trans
+            #params[a + 3 : a + 6] = cam.init_trans
+            #Neglect distortion
+            #params[a + 7] = 0
             cam.set_params(params[a:b])
 
         n_cams = len(self.cameras)
