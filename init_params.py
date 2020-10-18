@@ -12,13 +12,14 @@ from anipose_BA import CameraGroup, Camera
 from utils.utils_plotting import plot_cams_and_points
 import plotly.io as pio
 import plotly.graph_objs as go
+from preprocessing.preprocess_IBL import get_data
 
 pio.renderers.default = None  # "vscode"
 
 
-def get_cameras(img_size=(256, 256)):
-    P_X_1 = P_X_2 = img_size[0] // 2
-    P_Y_1 = P_Y_2 = img_size[1] // 2
+def get_cameras(img_width, img_height, focal_length, rvecs=None, tvecs=None):
+    P_X_1 = P_X_2 = img_width[0] // 2
+    P_Y_1 = P_Y_2 = img_height[0] // 2
 
     # --------CAMERA 1------------
     # Initialize camera 1
@@ -28,7 +29,7 @@ def get_cameras(img_size=(256, 256)):
     # Set rotations [0:3] and translation [3:6] to 0
     cam1_init_params[0:6] = 0
     # Initialize focal length to image width
-    cam1_init_params[6] = 1000
+    cam1_init_params[6] = focal_length
     # Initialize distortion to 0
     cam1_init_params[7] = 0.0
     # Set parameters
@@ -58,7 +59,7 @@ def get_cameras(img_size=(256, 256)):
     cam2_init_params = np.abs(np.random.rand(8))
     cam2_init_params[0:3] = rvec2
     cam2_init_params[3:6] = tvec2
-    cam2_init_params[6] = 1000
+    cam2_init_params[6] = focal_length
     cam2_init_params[7] = 0.0
     camera_2.set_params(cam2_init_params)
     camera_2_mat = camera_2.get_camera_matrix()
@@ -71,8 +72,15 @@ def get_cameras(img_size=(256, 256)):
     return cam_group
 
 
-points_3d = np.random.random((1000, 3))
-cam_group = get_cameras()
+experiment_data = get_data()
+pts_array_2d = experiment_data["pts_array_2d"]
+img_width = experiment_data["img_width"]
+img_height = experiment_data["img_height"]
+focal_length = (
+    experiment_data["focal_length_mm"] * experiment_data["img_width"][0]
+) / experiment_data["sensor_size"]
+
+cam_group = get_cameras(img_width, img_height, focal_length)
 
 fig = plot_cams_and_points(
     cam_group=cam_group,
@@ -80,6 +88,8 @@ fig = plot_cams_and_points(
     title="Camera Extrinsics",
     scene_aspect="data",
 )
+
+N_CLICKS = 0
 
 app = dash.Dash(__name__)
 
@@ -168,8 +178,22 @@ app.layout = html.Div(
             rot_sliders,
             style={"float": "bottom", "marginTop": 20},
         ),
+        html.Button("Triangulate", id="triangulate-button", n_clicks=0),
+        html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length))),
+        html.Div(id="focal-out"),
     ]
 )
+
+
+@app.callback(
+    Output("focal-out", "children"),
+    [Input("focal-len", "value")],
+)
+def update_output(focal_length):
+    global cam_group
+    for cam in cam_group.cameras:
+        cam.set_focal_length(float(focal_length))
+    return f"Focal length {focal_length}"
 
 
 @app.callback(
@@ -207,11 +231,15 @@ def update_sliders(cam_val):
         dash.dependencies.Input("x-rotate", "value"),
         dash.dependencies.Input("y-rotate", "value"),
         dash.dependencies.Input("z-rotate", "value"),
+        dash.dependencies.Input("triangulate-button", "n_clicks"),
     ],
 )
-def update_output(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot):
+def update_output(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks):
     global fig
     global trans_slider_vals
+    global N_CLICKS
+    global pts_array_2d
+    global cam_group
 
     cam_to_edit = cam_group.cameras[int(cam_val) - 1]
     curr_tvec = cam_to_edit.get_translation()
@@ -244,17 +272,25 @@ def update_output(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot):
 
     cam_group.cameras[int(cam_val) - 1] = cam_to_edit
 
-    new_fig = plot_cams_and_points(
-        cam_group=cam_group,
-        points_3d=None,
-    )
+    if n_clicks != N_CLICKS:
+        f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
+        new_fig = plot_cams_and_points(
+            cam_group=cam_group,
+            points_3d=points_3d_init,
+        )
+        N_CLICKS = n_clicks
+
+    else:
+        new_fig = plot_cams_and_points(
+            cam_group=cam_group,
+            points_3d=None,
+        )
 
     fig = go.Figure(data=new_fig["data"], layout=fig["layout"])
 
     return {"data": fig["data"], "layout": fig["layout"]}
 
 
-print('BROH: ', cam_group.cameras[-1].get_translation())
 
 if __name__ == "__main__":
     app.run_server(debug=True, use_reloader=False)
