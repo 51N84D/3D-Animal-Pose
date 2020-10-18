@@ -9,10 +9,15 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 import numpy as np
 from anipose_BA import CameraGroup, Camera
-from utils.utils_plotting import plot_cams_and_points
+from utils.utils_plotting import plot_cams_and_points, plot_image_labels
+from utils.utils_IO import reproject_3d_points, read_image
 import plotly.io as pio
 import plotly.graph_objs as go
 from preprocessing.preprocess_IBL import get_data
+import base64
+import matplotlib.pyplot as plt
+from pathlib import Path
+
 
 pio.renderers.default = None  # "vscode"
 
@@ -72,6 +77,38 @@ def get_cameras(img_width, img_height, focal_length, rvecs=None, tvecs=None):
     return cam_group
 
 
+def get_reproject_images(joined_list_2d, path_images, i=0):
+    fig, ax = plt.subplots()
+    img_1 = read_image(path_images[0][i], flip=False)
+    img_2 = read_image(path_images[1][i], flip=False)
+    img = np.concatenate((img_1, img_2), axis=0)
+    color_list_2d = ["red", "red", "blue", "blue"]
+    plot_image_labels(
+        img, joined_list_2d, i, color_list_2d, ax=ax, top_img_height=img_height[0]
+    )
+    reproj_dir = Path("./reproject_images")
+    reproj_dir.mkdir(exist_ok=True, parents=True)
+    plt.savefig(reproj_dir / f"img_{i}.png")
+    plt.clf()
+    return reproj_dir / f"img_{i}.png"
+
+
+def make_div_images(image_path=[]):
+    div_images = []
+    for i in range(len(image_path)):
+        image_filename = image_path[i]  # replace with your own image
+        encoded_image = base64.b64encode(open(image_filename, "rb").read())
+        div_images.append(
+            html.Div(
+                html.Img(
+                    src="data:image/png;base64,{}".format(encoded_image.decode()),
+                ),
+                style={"textAlign": "center"},
+            )
+        )
+    return div_images
+
+
 experiment_data = get_data()
 pts_array_2d = experiment_data["pts_array_2d"]
 img_width = experiment_data["img_width"]
@@ -79,6 +116,10 @@ img_height = experiment_data["img_height"]
 focal_length = (
     experiment_data["focal_length_mm"] * experiment_data["img_width"][0]
 ) / experiment_data["sensor_size"]
+path_images = experiment_data["path_images"]
+info_dict = experiment_data["info_dict"]
+
+div_images = make_div_images([path_images[0][0], path_images[1][0]])
 
 cam_group = get_cameras(img_width, img_height, focal_length)
 
@@ -133,10 +174,12 @@ for i in range(3):
             step=0.01,
             marks={
                 -np.pi: "-\u03C0",
+                -3 * np.pi / 4.0: "-3\u03C0/4",
                 -np.pi / 2.0: "-\u03C0/2",
                 -np.pi / 4.0: "-\u03C0/4",
                 0: f"{rot_slider_ids[i]}-rotate",
                 np.pi: "\u03C0",
+                3 * np.pi / 4.0: "3\u03C0/4",
                 np.pi / 2.0: "\u03C0/2",
                 np.pi / 4.0: "\u03C0/4",
             },
@@ -181,6 +224,7 @@ app.layout = html.Div(
         html.Button("Triangulate", id="triangulate-button", n_clicks=0),
         html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length))),
         html.Div(id="focal-out"),
+        html.Div(div_images, id="images", style={"float": "center", "marginTop": 100}),
     ]
 )
 
@@ -222,7 +266,10 @@ def update_sliders(cam_val):
 
 
 @app.callback(
-    dash.dependencies.Output("main-graph", "figure"),
+    [
+        dash.dependencies.Output("main-graph", "figure"),
+        dash.dependencies.Output("images", "children"),
+    ],
     [
         dash.dependencies.Input("cam-dropdown", "value"),
         dash.dependencies.Input("x-translate", "value"),
@@ -234,12 +281,13 @@ def update_sliders(cam_val):
         dash.dependencies.Input("triangulate-button", "n_clicks"),
     ],
 )
-def update_output(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks):
+def update_fig(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks):
     global fig
     global trans_slider_vals
     global N_CLICKS
     global pts_array_2d
     global cam_group
+    global div_images
 
     cam_to_edit = cam_group.cameras[int(cam_val) - 1]
     curr_tvec = cam_to_edit.get_translation()
@@ -274,6 +322,12 @@ def update_output(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_cli
 
     if n_clicks != N_CLICKS:
         f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
+        joined_list_2d = reproject_3d_points(
+            points_3d_init, info_dict, pts_array_2d, cam_group
+        )
+        reproj_path = get_reproject_images(joined_list_2d, path_images)
+        div_images = make_div_images([reproj_path])
+
         new_fig = plot_cams_and_points(
             cam_group=cam_group,
             points_3d=points_3d_init,
@@ -288,8 +342,7 @@ def update_output(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_cli
 
     fig = go.Figure(data=new_fig["data"], layout=fig["layout"])
 
-    return {"data": fig["data"], "layout": fig["layout"]}
-
+    return {"data": fig["data"], "layout": fig["layout"]}, div_images
 
 
 if __name__ == "__main__":

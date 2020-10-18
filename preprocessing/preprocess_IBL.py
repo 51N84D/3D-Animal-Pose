@@ -3,6 +3,11 @@ import os
 import numpy as np
 from pathlib import Path
 import re
+from utils.utils_IO import (
+    ordered_arr_3d_to_dict,
+    refill_nan_array,
+    arr_2d_to_list_of_dicts,
+)
 
 
 def sorted_nicely(l):
@@ -79,8 +84,6 @@ def get_data(eid="cb2ad999-a6cb-42ff-bf71-1774c57e5308", trial_range=[5, 7]):
     info_dict["num_analyzed_body_parts"] = num_analyzed_body_parts
     info_dict["num_points_all"] = num_points_all
     info_dict["clean_point_indices"] = np.arange(num_points_all)[non_nan_idc]
-
-    print(info_dict)
 
     pts_array_2d = pts_array_2d_with_nans[:, info_dict["clean_point_indices"]]
 

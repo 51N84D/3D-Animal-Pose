@@ -243,3 +243,28 @@ def write_video(image_dir, out_file):
         out.write(img_array[i])
     out.release()
 
+
+def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
+    # now we first refill the full sized containers, then revert to dicts.
+
+    # do the pts_array_3d_clean
+    # pts_2d_orig
+    pts_array_2d_og = np.reshape(
+        pts_array_2d, (pts_array_2d.shape[0] * pts_array_2d.shape[1], -1)
+    )
+    array_2d_orig = refill_nan_array(pts_array_2d_og, info_dict, dimension="2d")
+    pose_list_2d_orig = arr_2d_to_list_of_dicts(array_2d_orig, info_dict)
+
+    points_proj = []
+    for cam in cam_group.cameras:
+        points_proj.append(cam.project(points_3d).squeeze())
+
+    points_proj = np.concatenate(points_proj, axis=0)
+
+    # pts_2d_reproj
+    array_2d_reproj_back = refill_nan_array(points_proj, info_dict, dimension="2d")
+    pose_list_2d_reproj = arr_2d_to_list_of_dicts(array_2d_reproj_back, info_dict)
+
+    joined_list_2d = pose_list_2d_orig + pose_list_2d_reproj
+
+    return joined_list_2d
