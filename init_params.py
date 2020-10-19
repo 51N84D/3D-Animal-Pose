@@ -17,9 +17,9 @@ from preprocessing.preprocess_IBL import get_data
 import base64
 import matplotlib.pyplot as plt
 from pathlib import Path
+import json
 
-
-pio.renderers.default = None  # "vscode"
+pio.renderers.default = None
 
 
 def get_cameras(img_width, img_height, focal_length, rvecs=None, tvecs=None):
@@ -107,6 +107,22 @@ def make_div_images(image_path=[]):
             )
         )
     return div_images
+
+
+def write_params(param_file="params.json"):
+    # Write parameters to file
+    param_dict = {}
+    for i, cam in enumerate(cam_group.cameras):
+        cam_num = i + 1
+        cam_dict = {}
+        cam_dict["translation"] = cam.get_translation().tolist()
+        cam_dict["rotation"] = cam.get_rotation().tolist()
+        cam_dict["camera_matrix"] = cam.get_camera_matrix().tolist()
+
+        param_dict[f"cam_{cam_num}"] = cam_dict
+
+    with open(param_file, "w") as outfile:
+        json.dump(param_dict, outfile, indent=4)
 
 
 experiment_data = get_data()
@@ -222,11 +238,28 @@ app.layout = html.Div(
             style={"float": "bottom", "marginTop": 20},
         ),
         html.Button("Triangulate", id="triangulate-button", n_clicks=0),
+        html.Div(
+            html.Button("Write params to file", id="write-button", n_clicks=0),
+            style={"float": "right"},
+        ),
         html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length))),
         html.Div(id="focal-out"),
+        html.Div(id="write-out", children="", style={"float": "right"}),
+
         html.Div(div_images, id="images", style={"float": "center", "marginTop": 100}),
+
+
     ]
 )
+
+
+@app.callback(
+    Output("write-out", "children"),
+    [Input("write-button", "n_clicks")],
+)
+def params_out(n_clicks):
+    write_params()
+    return "Writing params to file: params.json"
 
 
 @app.callback(
