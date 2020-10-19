@@ -450,9 +450,9 @@ def plot_cams_and_points(
 
     if cam_group is not None:
         for i, cam in enumerate(cam_group.cameras):
-            rot_vec = R.from_rotvec(cam.init_rot)
+            rot_vec = R.from_rotvec(cam.get_rotation())
             R_mat = rot_vec.as_matrix()
-            t = cam.init_trans
+            t = cam.get_translation()
 
             data += vector_plot(
                 [R_mat[:, 0], R_mat[:, 1], R_mat[:, 2]], orig=t, cam_name=f"cam_{i+1}"
@@ -515,11 +515,11 @@ def plot_cams_and_points(
         )
 
     fig = go.Figure(data=data, layout=layout)
-    fig.update_traces(textfont_size=6)
-
+    fig.update_traces(textfont_size=15)
     fig.update_layout(scene_aspectmode=scene_aspect)
     fig.update_layout(scene_camera=scene_camera)
-
+    fig.update_layout(showlegend=False)
+    
     fig.update_layout(
         title={
             "text": title,
@@ -532,5 +532,7 @@ def plot_cams_and_points(
 
     if show_plot:
         fig.show()
+
+    fig["layout"]["uirevision"] = "nothing"
 
     return fig
