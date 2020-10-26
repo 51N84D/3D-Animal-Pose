@@ -12,6 +12,8 @@ import numpy as np
 import matplotlib.image as mpimg
 import cv2
 import os
+import re
+
 
 # pickle utils
 def save_object(obj, filename):
@@ -154,7 +156,7 @@ def ordered_arr_3d_to_dict(pts_array_3d, info_dict):
     return pose_dict
 
 
-def refill_nan_array(pts_array_clean, info_dict, dimension):
+def refill_nan_array(pts_array_clean, info_dict, dimension, num_cameras):
     """we take our chopped array and embedd it in a full array with nans"""
     if dimension == "3d":
         pts_refill = np.empty(
@@ -162,11 +164,13 @@ def refill_nan_array(pts_array_clean, info_dict, dimension):
         )
         pts_refill[:] = np.NaN
         pts_refill[info_dict["clean_point_indices"], :] = pts_array_clean
+
     else:
+
         pts_all_flat = np.arange(
             info_dict["num_frames"] * info_dict["num_analyzed_body_parts"]
         )
-        indices_init = np.concatenate([pts_all_flat, pts_all_flat])
+        indices_init = np.concatenate([pts_all_flat] * num_cameras)
 
         pts_refill = np.empty(
             (
@@ -176,10 +180,12 @@ def refill_nan_array(pts_array_clean, info_dict, dimension):
                 2,
             )
         )
+
         pts_refill[:] = np.NaN
         pts_refill[
             np.isin(indices_init, info_dict["clean_point_indices"]), :
         ] = pts_array_clean
+
     return pts_refill
 
 
@@ -224,9 +230,17 @@ def make_image_array(img_indexes, flip):
     return img_array
 
 
+# sorts incoming files alphanumerically into list
+def sorted_alphanumeric(data):
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split("([0-9]+)", key)]
+    return sorted(data, key=alphanum_key)
+
+
 def write_video(image_dir, out_file):
     im_list = os.listdir(image_dir)
-    im_list.sort()
+    im_list = sorted_alphanumeric(im_list)
+    # im_list.sort(key=lambda x: int(x.split(".")[0]))
     if ".DS_Store" in im_list:
         im_list.remove(".DS_Store")
 
@@ -252,7 +266,12 @@ def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
     pts_array_2d_og = np.reshape(
         pts_array_2d, (pts_array_2d.shape[0] * pts_array_2d.shape[1], -1)
     )
-    array_2d_orig = refill_nan_array(pts_array_2d_og, info_dict, dimension="2d")
+
+    num_cameras = len(cam_group.cameras)
+
+    array_2d_orig = refill_nan_array(
+        pts_array_2d_og, info_dict, dimension="2d", num_cameras=num_cameras
+    )
     pose_list_2d_orig = arr_2d_to_list_of_dicts(array_2d_orig, info_dict)
 
     points_proj = []
@@ -262,9 +281,11 @@ def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
     points_proj = np.concatenate(points_proj, axis=0)
 
     # pts_2d_reproj
-    array_2d_reproj_back = refill_nan_array(points_proj, info_dict, dimension="2d")
+    array_2d_reproj_back = refill_nan_array(
+        points_proj, info_dict, dimension="2d", num_cameras=num_cameras
+    )
     pose_list_2d_reproj = arr_2d_to_list_of_dicts(array_2d_reproj_back, info_dict)
 
     joined_list_2d = pose_list_2d_orig + pose_list_2d_reproj
-
+    
     return joined_list_2d

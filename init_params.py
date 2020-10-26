@@ -13,84 +13,140 @@ from utils.utils_plotting import plot_cams_and_points, plot_image_labels
 from utils.utils_IO import reproject_3d_points, read_image
 import plotly.io as pio
 import plotly.graph_objs as go
-from preprocessing.preprocess_IBL import get_data
+from preprocessing.preprocess_Sawtell import get_data
 import base64
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+
 from pathlib import Path
 import json
 
 pio.renderers.default = None
 
 
-def get_cameras(img_width, img_height, focal_length, rvecs=None, tvecs=None):
-    P_X_1 = P_X_2 = img_width[0] // 2
-    P_Y_1 = P_Y_2 = img_height[0] // 2
+def get_cameras(
+    img_widths, img_heights, focal_length, num_cameras, rvecs=None, tvecs=None
+):
+    cameras = []
+    for i in range(num_cameras):
+        cam = Camera(rvec=[0, 0, 0], tvec=[0, 0, 0])
+        cam_init_params = np.abs(np.random.rand(8))
 
-    # --------CAMERA 1------------
-    # Initialize camera 1
-    camera_1 = Camera(rvec=[0, 0, 0], tvec=[0, 0, 0])
+        # Set rotations [0:3] and translation [3:6] to 0
+        cam_init_params[0:6] = 0
+        # Initialize focal length to image width
+        cam_init_params[6] = focal_length
+        # Initialize distortion to 0
+        cam_init_params[7] = 0.0
 
-    cam1_init_params = np.abs(np.random.rand(8))
-    # Set rotations [0:3] and translation [3:6] to 0
-    cam1_init_params[0:6] = 0
-    # Initialize focal length to image width
-    cam1_init_params[6] = focal_length
-    # Initialize distortion to 0
-    cam1_init_params[7] = 0.0
-    # Set parameters
-    camera_1.set_params(cam1_init_params)
-    camera_1_mat = camera_1.get_camera_matrix()
-    camera_1_mat[0, 2] = P_X_1
-    camera_1_mat[1, 2] = P_Y_1
-    camera_1.set_camera_matrix(camera_1_mat)
+        # Set Offset
+        cam.set_params(cam_init_params)
+        cam_mat = cam.get_camera_matrix()
+        cam_mat[0, 2] = img_widths[i] // 2
+        cam_mat[1, 2] = img_heights[i] // 2
+        cam.set_camera_matrix(cam_mat)
+        cameras.append(cam)
 
-    # --------CAMERA 2------------
-    # Set rotation vector w.r.t. camera 1
-    # roration around y axis only, about 120 deg (2.0127 rad) from Guido's CAD
-    # rvec2 = np.array([0, 2.0127, 0])
-    rvec2 = np.array([0, 0, 0])
-
-    # Set translation vector w.r.t. camera 1, using CAD drawing [mm];
-    # cameras are 292.8 mm apart;
-    # distance vector pointing from cam1 to the other cam:
-    # tvec2 = [-1.5664, 0, 2.4738]
-    tvec2 = [0, 0, 0]
-
-    # Initialize camera 2
-    camera_2 = Camera(rvec=rvec2, tvec=tvec2)
-    # Set offset
-    camera_2.set_size((P_X_2, P_Y_2))
-
-    cam2_init_params = np.abs(np.random.rand(8))
-    cam2_init_params[0:3] = rvec2
-    cam2_init_params[3:6] = tvec2
-    cam2_init_params[6] = focal_length
-    cam2_init_params[7] = 0.0
-    camera_2.set_params(cam2_init_params)
-    camera_2_mat = camera_2.get_camera_matrix()
-    camera_2_mat[0, 2] = P_X_2
-    camera_2_mat[1, 2] = P_Y_2
-    camera_2.set_camera_matrix(camera_2_mat)
-
-    # Group cameras
-    cam_group = CameraGroup(cameras=[camera_1, camera_2])
+    cam_group = CameraGroup(cameras=cameras)
     return cam_group
 
 
-def get_reproject_images(joined_list_2d, path_images, i=0):
+def refill_arr(points_2d, info_dict):
+
+    clean_point_indices = info_dict["clean_point_indices"]
+    num_points_all = info_dict["num_points_all"]
+    num_frames = info_dict["num_frames"]
+    all_point_indices = np.arange(num_points_all)
+
+    nan_point_indices = np.asarray(
+        [x for x in all_point_indices if x not in clean_point_indices]
+    )
+
+    # If points_2d is (num_views, num_points, 2):
+    if len(points_2d.shape) == 3:
+        filled_points_2d = np.empty((points_2d.shape[0], num_points_all, 2))
+        filled_points_2d[:, clean_point_indices, :] = points_2d
+        filled_points_2d[:, nan_point_indices, :] = np.nan
+        filled_points_2d = np.reshape(filled_points_2d, (points_2d.shape[0], num_frames, -1, 2))
+
+    # Elif points2d is (num_points, 2) --> this happens if we consider each view separately
+    elif len(points_2d.shape) == 2:
+        filled_points_2d = np.empty((num_points_all, 2))
+        filled_points_2d[clean_point_indices, :] = points_2d
+        filled_points_2d[nan_point_indices, :] = np.nan
+        filled_points_2d = np.reshape(filled_points_2d, (num_frames, -1, 2))
+    return filled_points_2d
+
+
+def reproject_points(points_3d, cam_group, info_dict):
+
+    multivew_filled_points_2d = []
+
+    for cam in cam_group.cameras:
+        points_2d = np.squeeze(cam.project(points_3d))
+        filled_points_2d = refill_arr(points_2d, info_dict)
+        # Now, reshape back to (num_frames, num_points per frame, 2):
+        multivew_filled_points_2d.append(filled_points_2d)
+
+    multivew_filled_points_2d = np.asarray(multivew_filled_points_2d)
+    return multivew_filled_points_2d
+
+
+def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
+    print("---------GETTING REPROJECTED IMAGES-----------------")
+    # For each camera
+    reproj_dir = Path("./reproject_images")
+    reproj_dir.mkdir(exist_ok=True, parents=True)
+
+    for cam_num in range(len(path_images)):
+        img_path = path_images[cam_num][i]
+        img = plt.imread(img_path)
+        implot = plt.imshow(img)
+
+        plt.scatter(points_2d_og[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="red")
+        plt.scatter(points_2d_reproj[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="blue")
+
+        plt.savefig(reproj_dir / f"view_{cam_num}_img_{i}.png")
+        plt.clf()
+
+        '''
+        points_og = joined_list_2d[cam_num]
+        points_reproj = joined_list_2d[cam_num + len(path_images)]
+
+        plt.scatter(points_og["x_coords"][i, :], points_og["y_coords"][i, :], c="red")
+        plt.scatter(
+            points_reproj["x_coords"][i, :], points_og["y_coords"][i, :], c="blue"
+        )
+
+        plt.savefig(reproj_dir / f"view_{cam_num}_img_{i}.png")
+        plt.clf()
+        '''
+    print("----------------------------------------------------")
+    """
     fig, ax = plt.subplots()
     img_1 = read_image(path_images[0][i], flip=False)
     img_2 = read_image(path_images[1][i], flip=False)
     img = np.concatenate((img_1, img_2), axis=0)
-    color_list_2d = ["red", "red", "blue", "blue"]
+    color_list_2d = ["red"] * num_cameras + ["blue"] * num_cameras
+
     plot_image_labels(
-        img, joined_list_2d, i, color_list_2d, ax=ax, top_img_height=img_height[0]
+        img,
+        joined_list_2d,
+        i,
+        color_list_2d,
+        ax=ax,
+        top_img_height=img_height[0],
+        pad=0,
     )
     reproj_dir = Path("./reproject_images")
     reproj_dir.mkdir(exist_ok=True, parents=True)
     plt.savefig(reproj_dir / f"img_{i}.png")
     plt.clf()
-    return reproj_dir / f"img_{i}.png"
+    """
+    return reproj_dir / f"view_0_img_{i}.png"
 
 
 def make_div_images(image_path=[]):
@@ -102,6 +158,7 @@ def make_div_images(image_path=[]):
             html.Div(
                 html.Img(
                     src="data:image/png;base64,{}".format(encoded_image.decode()),
+                    style={"height": "10%", "width": "10%"},
                 ),
                 style={"textAlign": "center"},
             )
@@ -129,15 +186,15 @@ experiment_data = get_data()
 pts_array_2d = experiment_data["pts_array_2d"]
 img_width = experiment_data["img_width"]
 img_height = experiment_data["img_height"]
-focal_length = (
-    experiment_data["focal_length_mm"] * experiment_data["img_width"][0]
-) / experiment_data["sensor_size"]
+focal_length = experiment_data["focal_length"]
 path_images = experiment_data["path_images"]
+print("path images: ", path_images[0][0])
 info_dict = experiment_data["info_dict"]
+num_cameras = info_dict["num_cameras"]
 
 div_images = make_div_images([path_images[0][0], path_images[1][0]])
 
-cam_group = get_cameras(img_width, img_height, focal_length)
+cam_group = get_cameras(img_width, img_height, focal_length, num_cameras)
 
 fig = plot_cams_and_points(
     cam_group=cam_group,
@@ -226,13 +283,26 @@ app.layout = html.Div(
             value="2",
         ),
         html.Div(
-            dcc.Graph(
-                id="main-graph",
-                figure={"data": fig["data"], "layout": {"uirevision": "nothing"}},
-            ),
-            style={"float": "center", "marginTop": 20},
+            [
+                html.Div(
+                    dcc.Graph(
+                        id="main-graph",
+                        figure={
+                            "data": fig["data"],
+                            "layout": {"uirevision": "nothing"},
+                        },
+                    ),
+                    style={"float": "right", "marginTop": 0},
+                ),
+                html.Div(
+                    div_images,
+                    id="images",
+                    style={"float": "left", "marginTop": 100, "marginBottom": 100},
+                ),
+            ],
+            className="row",
         ),
-        html.Div(trans_sliders, style={"float": "bottom", "marginTop": 20}),
+        html.Div(trans_sliders, style={"float": "bottom", "marginTop": 500}),
         html.Div(
             rot_sliders,
             style={"float": "bottom", "marginTop": 20},
@@ -245,10 +315,6 @@ app.layout = html.Div(
         html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length))),
         html.Div(id="focal-out"),
         html.Div(id="write-out", children="", style={"float": "right"}),
-
-        html.Div(div_images, id="images", style={"float": "center", "marginTop": 100}),
-
-
     ]
 )
 
@@ -355,11 +421,19 @@ def update_fig(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks
 
     if n_clicks != N_CLICKS:
         f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
+
+        points_2d_reproj = reproject_points(points_3d_init, cam_group, info_dict)
+        points_2d_og = refill_arr(pts_array_2d, info_dict)
+
+        '''
         joined_list_2d = reproject_3d_points(
             points_3d_init, info_dict, pts_array_2d, cam_group
         )
-        reproj_path = get_reproject_images(joined_list_2d, path_images)
-        div_images = make_div_images([reproj_path])
+        '''
+
+        reproj_path = get_reproject_images(points_2d_reproj, points_2d_og, path_images)
+
+        # div_images = make_div_images([reproj_path])
 
         new_fig = plot_cams_and_points(
             cam_group=cam_group,

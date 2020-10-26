@@ -601,7 +601,7 @@ class CameraGroup:
         loss="linear",
         threshold=50,
         ftol=1e-4,
-        max_nfev=100,
+        max_nfev=10,
         weights=None,
         start_params=None,
         verbose=True,
