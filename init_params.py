@@ -109,61 +109,31 @@ def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
         plt.scatter(points_2d_og[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="red")
         plt.scatter(points_2d_reproj[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="blue")
 
-        plt.savefig(reproj_dir / f"view_{cam_num}_img_{i}.png")
+        plt.savefig(reproj_dir / f"view_{cam_num}_img_{i}.png", bbox_inches='tight', pad_inches=0)
         plt.clf()
 
-        '''
-        points_og = joined_list_2d[cam_num]
-        points_reproj = joined_list_2d[cam_num + len(path_images)]
-
-        plt.scatter(points_og["x_coords"][i, :], points_og["y_coords"][i, :], c="red")
-        plt.scatter(
-            points_reproj["x_coords"][i, :], points_og["y_coords"][i, :], c="blue"
-        )
-
-        plt.savefig(reproj_dir / f"view_{cam_num}_img_{i}.png")
-        plt.clf()
-        '''
-    print("----------------------------------------------------")
-    """
-    fig, ax = plt.subplots()
-    img_1 = read_image(path_images[0][i], flip=False)
-    img_2 = read_image(path_images[1][i], flip=False)
-    img = np.concatenate((img_1, img_2), axis=0)
-    color_list_2d = ["red"] * num_cameras + ["blue"] * num_cameras
-
-    plot_image_labels(
-        img,
-        joined_list_2d,
-        i,
-        color_list_2d,
-        ax=ax,
-        top_img_height=img_height[0],
-        pad=0,
-    )
-    reproj_dir = Path("./reproject_images")
-    reproj_dir.mkdir(exist_ok=True, parents=True)
-    plt.savefig(reproj_dir / f"img_{i}.png")
-    plt.clf()
-    """
-    return reproj_dir / f"view_0_img_{i}.png"
+    return [reproj_dir / f"view_{cam_num}_img_{i}.png" for cam_num in range(len(path_images))]
 
 
 def make_div_images(image_path=[]):
     div_images = []
+    #First set height:
+    max_height = 400 / len(image_path)
     for i in range(len(image_path)):
         image_filename = image_path[i]  # replace with your own image
         encoded_image = base64.b64encode(open(image_filename, "rb").read())
+
         div_images.append(
             html.Div(
                 html.Img(
                     src="data:image/png;base64,{}".format(encoded_image.decode()),
-                    style={"height": "10%", "width": "10%"},
+                    style={"max-height": f"{max_height}px", "float": "center"},
                 ),
                 style={"textAlign": "center"},
             )
         )
     return div_images
+
 
 
 def write_params(param_file="params.json"):
@@ -192,7 +162,7 @@ print("path images: ", path_images[0][0])
 info_dict = experiment_data["info_dict"]
 num_cameras = info_dict["num_cameras"]
 
-div_images = make_div_images([path_images[0][0], path_images[1][0]])
+div_images = make_div_images([i[0] for i in path_images])
 
 cam_group = get_cameras(img_width, img_height, focal_length, num_cameras)
 
@@ -297,12 +267,12 @@ app.layout = html.Div(
                 html.Div(
                     div_images,
                     id="images",
-                    style={"float": "left", "marginTop": 100, "marginBottom": 100},
+                    style={"float": "center", "marginTop": 100, "marginBottom": 100, "max-height": "500px"},
                 ),
             ],
             className="row",
         ),
-        html.Div(trans_sliders, style={"float": "bottom", "marginTop": 500}),
+        html.Div(trans_sliders, style={"float": "bottom", "marginTop": 100}),
         html.Div(
             rot_sliders,
             style={"float": "bottom", "marginTop": 20},
@@ -431,9 +401,9 @@ def update_fig(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks
         )
         '''
 
-        reproj_path = get_reproject_images(points_2d_reproj, points_2d_og, path_images)
+        reproj_paths = get_reproject_images(points_2d_reproj, points_2d_og, path_images)
 
-        # div_images = make_div_images([reproj_path])
+        div_images = make_div_images(reproj_paths)
 
         new_fig = plot_cams_and_points(
             cam_group=cam_group,
