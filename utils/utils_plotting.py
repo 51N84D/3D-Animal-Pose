@@ -14,7 +14,7 @@ import numpy as np
 import plotly.graph_objs as go
 import cv2
 from scipy.spatial.transform import Rotation as R
-
+from matplotlib import colors
 
 # this function assumes that we're plotting the first n frames of our dictionaries
 def video_recover_plots(
@@ -364,9 +364,21 @@ def vector_plot(
     # fig.show()
 
 
-def draw_circles(img, points):
-    for point in points:
-        cv2.circle(img, (point[0], point[1]), 10, (255, 0, 255), -1)
+def draw_circles(img, points, point_colors=None):
+
+    if point_colors is not None:
+
+        assert isinstance(point_colors, list)
+        assert len(point_colors) == points.shape[0]
+
+    for i, point in enumerate(points):
+        if point_colors is not None:
+            color = [i * 255 for i in colors.to_rgb(point_colors[i])]
+            cv2.circle(
+                img, (point[0], point[1]), 10, (color[2], color[1], color[0]), -1
+            )
+        else:
+            cv2.circle(img, (point[0], point[1]), 10, (255, 255, 255), -1)
     return img
 
 
@@ -378,7 +390,7 @@ def slope(x1, y1, x2, y2):
         return "NA"
 
 
-def drawLine(image, x1, y1, x2, y2):
+def drawLine(image, x1, y1, x2, y2, color=None):
 
     m = slope(x1, y1, x2, y2)
     h, w = image.shape[:2]
@@ -395,7 +407,20 @@ def drawLine(image, x1, y1, x2, y2):
         ### if slope is zero, draw a line with x=x1 and y=0 and y=height
         px, py = x1, 0
         qx, qy = x1, h
-    image = cv2.line(image, (int(px), int(py)), (int(qx), int(qy)), (255, 255, 255), 2)
+
+    if color is not None:
+        color = [i * 255 for i in colors.to_rgb(color)]
+        image = cv2.line(
+            image,
+            (int(px), int(py)),
+            (int(qx), int(qy)),
+            (color[2], color[1], color[0]),
+            2,
+        )
+    else:
+        image = cv2.line(
+            image, (int(px), int(py)), (int(qx), int(qy)), (255, 255, 255), 2
+        )
     return image
 
 
@@ -429,6 +454,8 @@ def plot_cams_and_points(
     show_plot=True,
     skeleton_bp=None,
     skeleton_lines=None,
+    line_colors=None,
+    point_colors=None,
 ):
     """
     Plots the coordinate systems of the cameras along with the 3D points
@@ -440,7 +467,7 @@ def plot_cams_and_points(
                 y=points_3d[:, 1],
                 z=points_3d[:, 2],
                 mode="markers",
-                marker=dict(size=point_size),
+                marker=dict(size=point_size, color=point_colors),
             )
         ]
 
@@ -457,9 +484,8 @@ def plot_cams_and_points(
             data += vector_plot(
                 [R_mat[:, 0], R_mat[:, 1], R_mat[:, 2]], orig=t, cam_name=f"cam_{i+1}"
             )
-
     if skeleton_bp is not None and skeleton_lines is not None:
-        for line in skeleton_lines:
+        for i, line in enumerate(skeleton_lines):
             from_bp = line[0]
             to_bp = line[1]
 
@@ -468,12 +494,16 @@ def plot_cams_and_points(
                     skeleton_bp[from_bp][i] - skeleton_bp[to_bp][i] for i in range(3)
                 ]
 
+                if line_colors is not None:
+                    color = [line_colors[i]]
+                else:
+                    color = ["red"]
                 vec_data = vector_plot(
                     [vec],
                     orig=skeleton_bp[to_bp],
                     cam_name=to_bp,
                     names=[from_bp],
-                    colors=["green"],
+                    colors=color,
                 )
                 data += vec_data
 
@@ -485,41 +515,45 @@ def plot_cams_and_points(
                 ]
 
                 mid = [
-                    skeleton_bp[from_bp[1]][j] + vec_from_from[j] / 2.0
+                    (skeleton_bp[from_bp[1]][j] + vec_from_from[j] * from_bp[-1])
                     for j in range(3)
                 ]
 
                 vec = [mid[i] - skeleton_bp[to_bp][i] for i in range(3)]
-
+                if line_colors is not None:
+                    color = [line_colors[i]]
+                else:
+                    color = ["green"]
                 vec_data = vector_plot(
                     [vec],
                     orig=skeleton_bp[to_bp],
                     cam_name=to_bp,
-                    names=["mid"],
-                    colors=["brown"],
+                    names=[""],
+                    colors=color,
                 )
                 data += vec_data
 
     if scene_lims is not None:
         layout = go.Layout(
-            margin=dict(l=4, r=4, b=4, t=4),
+            margin=dict(l=0, r=0, b=0, t=0),
             scene=dict(
-                xaxis=dict(nticks=4, range=scene_lims[0]),
-                yaxis=dict(nticks=4, range=scene_lims[1]),
-                zaxis=dict(nticks=4, range=scene_lims[2]),
+                xaxis=dict(nticks=4, range=scene_lims[0], showticklabels=False),
+                yaxis=dict(nticks=4, range=scene_lims[1], showticklabels=False),
+                zaxis=dict(nticks=4, range=scene_lims[2], showticklabels=False),
             ),
         )
     else:
         layout = go.Layout(
-            margin=dict(l=4, r=4, b=4, t=4),
+            margin=dict(l=0, r=0, b=0, t=0),
         )
 
     fig = go.Figure(data=data, layout=layout)
     fig.update_traces(textfont_size=15)
     fig.update_layout(scene_aspectmode=scene_aspect)
     fig.update_layout(scene_camera=scene_camera)
+    fig.update_layout(margin=dict(l=0, r=0, b=0, t=0))
     fig.update_layout(showlegend=False)
-    
+
     fig.update_layout(
         title={
             "text": title,
@@ -527,7 +561,7 @@ def plot_cams_and_points(
             "x": 0.5,
             "xanchor": "center",
             "yanchor": "top",
-        }
+        },
     )
 
     if show_plot:

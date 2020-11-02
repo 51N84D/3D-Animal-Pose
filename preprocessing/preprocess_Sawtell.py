@@ -50,16 +50,35 @@ def get_data():
     view_names = ["top", "main", "right"]
     assert len(view_names) == num_cameras
 
+
+    # NOTE: Empty list keeps all bodyparts
+    bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
+
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
+
+    new_skeleton_names = []
     for idx, name in enumerate(f["skeleton_names"]):
+        if len(bp_to_keep) > 0:
+            skip_bp = True
+            for bp in bp_to_keep:
+                if bp == name.decode("UTF-8").split("_")[0]:
+                    skip_bp = False
+            if skip_bp:
+                continue
+
+        new_skeleton_names.append(name)
         for view_name in view_names:
             if view_name in name.decode("UTF-8").split("_")[-1]:
                 multiview_idx_to_name[idx] = view_name
                 multiview_name_to_idx[view_name].append(idx)
 
+    if len(bp_to_keep) > 0:
+        num_analyzed_body_parts = int(len(new_skeleton_names) / num_cameras)
+
+
     # (num views, num frames, num points per frame, 2)
-    multiview_pts_2d = np.empty(
+    multiview_pts_2d = np.empty(    
         shape=(num_cameras, pts_array.shape[0], num_analyzed_body_parts, 2)
     )
     for i, view_name in enumerate(view_names):
@@ -133,7 +152,12 @@ def get_data():
     focal_length_mm = 15
     sensor_size = 12
     for i in range(num_cameras):
-        focal_length = (focal_length_mm * img_widths[i]) / sensor_size
+        # focal_length = (focal_length_mm * img_widths[i]) / sensor_size
+        # focal_length = (focal_length_mm * img_heights[i]) / sensor_size
+        focal_length = (
+            focal_length_mm * ((img_heights[i] ** 2 + img_widths[i] ** 2) ** (1 / 2))
+        ) / sensor_size
+
         focal_lengths.append(focal_length)
 
     return {
@@ -142,7 +166,7 @@ def get_data():
         "pts_array_2d": pts_array_2d,
         "info_dict": info_dict,
         "path_images": path_images,
-        "focal_length": focal_lengths[0],
+        "focal_length": focal_lengths,
     }
 
 

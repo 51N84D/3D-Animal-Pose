@@ -237,7 +237,7 @@ def sorted_alphanumeric(data):
     return sorted(data, key=alphanum_key)
 
 
-def write_video(image_dir, out_file):
+def write_video(image_dir, out_file, fps=5):
     im_list = os.listdir(image_dir)
     im_list = sorted_alphanumeric(im_list)
     # im_list.sort(key=lambda x: int(x.split(".")[0]))
@@ -251,7 +251,7 @@ def write_video(image_dir, out_file):
         size = (width, height)
         img_array.append(img)
 
-    out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*"DIVX"), 5, size)  # 15 fps
+    out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, size)  # 15 fps
 
     for i in range(len(img_array)):
         out.write(img_array[i])

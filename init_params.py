@@ -20,9 +20,12 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-
+import sys
 from pathlib import Path
 import json
+from copy import deepcopy
+
+import time
 
 pio.renderers.default = None
 
@@ -38,7 +41,10 @@ def get_cameras(
         # Set rotations [0:3] and translation [3:6] to 0
         cam_init_params[0:6] = 0
         # Initialize focal length to image width
-        cam_init_params[6] = focal_length
+        if isinstance(focal_length, list):
+            cam_init_params[6] = focal_length[i]
+        else:
+            cam_init_params[6] = focal_length
         # Initialize distortion to 0
         cam_init_params[7] = 0.0
 
@@ -70,7 +76,9 @@ def refill_arr(points_2d, info_dict):
         filled_points_2d = np.empty((points_2d.shape[0], num_points_all, 2))
         filled_points_2d[:, clean_point_indices, :] = points_2d
         filled_points_2d[:, nan_point_indices, :] = np.nan
-        filled_points_2d = np.reshape(filled_points_2d, (points_2d.shape[0], num_frames, -1, 2))
+        filled_points_2d = np.reshape(
+            filled_points_2d, (points_2d.shape[0], num_frames, -1, 2)
+        )
 
     # Elif points2d is (num_points, 2) --> this happens if we consider each view separately
     elif len(points_2d.shape) == 2:
@@ -96,28 +104,38 @@ def reproject_points(points_3d, cam_group, info_dict):
 
 
 def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
-    print("---------GETTING REPROJECTED IMAGES-----------------")
     # For each camera
     reproj_dir = Path("./reproject_images")
     reproj_dir.mkdir(exist_ok=True, parents=True)
-
     for cam_num in range(len(path_images)):
         img_path = path_images[cam_num][i]
         img = plt.imread(img_path)
         implot = plt.imshow(img)
 
-        plt.scatter(points_2d_og[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="red")
-        plt.scatter(points_2d_reproj[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="blue")
-
-        plt.savefig(reproj_dir / f"view_{cam_num}_img_{i}.png", bbox_inches='tight', pad_inches=0)
+        plt.scatter(
+            points_2d_og[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="red"
+        )
+        plt.scatter(
+            points_2d_reproj[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="blue"
+        )
+        plt.savefig(
+            reproj_dir / f"view_{cam_num}_img_{i}.png",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
         plt.clf()
 
-    return [reproj_dir / f"view_{cam_num}_img_{i}.png" for cam_num in range(len(path_images))]
+    plt.close()
+
+    return [
+        reproj_dir / f"view_{cam_num}_img_{i}.png"
+        for cam_num in range(len(path_images))
+    ]
 
 
 def make_div_images(image_path=[]):
     div_images = []
-    #First set height:
+    # First set height:
     max_height = 400 / len(image_path)
     for i in range(len(image_path)):
         image_filename = image_path[i]  # replace with your own image
@@ -133,7 +151,6 @@ def make_div_images(image_path=[]):
             )
         )
     return div_images
-
 
 
 def write_params(param_file="params.json"):
@@ -158,13 +175,13 @@ img_width = experiment_data["img_width"]
 img_height = experiment_data["img_height"]
 focal_length = experiment_data["focal_length"]
 path_images = experiment_data["path_images"]
-print("path images: ", path_images[0][0])
 info_dict = experiment_data["info_dict"]
 num_cameras = info_dict["num_cameras"]
 
 div_images = make_div_images([i[0] for i in path_images])
 
 cam_group = get_cameras(img_width, img_height, focal_length, num_cameras)
+cam_group_reset = cam_group
 
 fig = plot_cams_and_points(
     cam_group=cam_group,
@@ -173,7 +190,10 @@ fig = plot_cams_and_points(
     scene_aspect="data",
 )
 
-N_CLICKS = 0
+N_CLICKS_TRIANGULATE = 0
+N_CLICKS_BUNDLE = 0
+N_CLICKS_RESET = 0
+POINTS_3D = None
 
 app = dash.Dash(__name__)
 
@@ -253,7 +273,35 @@ app.layout = html.Div(
             value="2",
         ),
         html.Div(
+            html.Button(
+                "Bundle-Adjust",
+                id="bundle-adjust-button",
+                n_clicks=0,
+                style={"float": "center"},
+            ),
+            style={"float": "right"},
+        ),
+        html.Div(
+            html.Button(
+                "Reset", id="reset-button", n_clicks=0, style={"float": "center"}
+            ),
+            style={"float": "right"},
+        ),
+        html.Div(
             [
+                html.Div(
+                    dcc.Slider(
+                        id="frame-selection",
+                        min=0,
+                        max=len(path_images[0]) - 1,
+                        step=1,
+                        value=0,
+                        vertical=True,
+                    ),
+                    style={
+                        "float": "left",
+                    },
+                ),
                 html.Div(
                     dcc.Graph(
                         id="main-graph",
@@ -267,7 +315,12 @@ app.layout = html.Div(
                 html.Div(
                     div_images,
                     id="images",
-                    style={"float": "center", "marginTop": 100, "marginBottom": 100, "max-height": "500px"},
+                    style={
+                        "float": "center",
+                        "marginTop": 100,
+                        "marginBottom": 100,
+                        "max-height": "500px",
+                    },
                 ),
             ],
             className="row",
@@ -282,7 +335,7 @@ app.layout = html.Div(
             html.Button("Write params to file", id="write-button", n_clicks=0),
             style={"float": "right"},
         ),
-        html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length))),
+        html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length[0]))),
         html.Div(id="focal-out"),
         html.Div(id="write-out", children="", style={"float": "right"}),
     ]
@@ -295,18 +348,21 @@ app.layout = html.Div(
 )
 def params_out(n_clicks):
     write_params()
-    return "Writing params to file: params.json"
+    return ""
 
 
+"""
 @app.callback(
     Output("focal-out", "children"),
     [Input("focal-len", "value")],
 )
 def update_output(focal_length):
     global cam_group
+    print("BROH: UPDATING FOCAL LENGTH")
     for cam in cam_group.cameras:
         cam.set_focal_length(float(focal_length))
     return f"Focal length {focal_length}"
+"""
 
 
 @app.callback(
@@ -348,19 +404,44 @@ def update_sliders(cam_val):
         dash.dependencies.Input("y-rotate", "value"),
         dash.dependencies.Input("z-rotate", "value"),
         dash.dependencies.Input("triangulate-button", "n_clicks"),
+        dash.dependencies.Input("bundle-adjust-button", "n_clicks"),
+        dash.dependencies.Input("reset-button", "n_clicks"),
+        dash.dependencies.Input("frame-selection", "value"),
     ],
 )
-def update_fig(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks):
+def update_fig(
+    cam_val,
+    x_trans,
+    y_trans,
+    z_trans,
+    x_rot,
+    y_rot,
+    z_rot,
+    n_clicks_triangulate,
+    n_clicks_bundle,
+    n_clicks_reset,
+    frame_i,
+):
     global fig
     global trans_slider_vals
-    global N_CLICKS
+    global N_CLICKS_TRIANGULATE
+    global N_CLICKS_BUNDLE
+    global N_CLICKS_RESET
+
     global pts_array_2d
     global cam_group
+    global cam_group_reset
+
     global div_images
+
+    global POINTS_3D
 
     cam_to_edit = cam_group.cameras[int(cam_val) - 1]
     curr_tvec = cam_to_edit.get_translation()
     curr_rvec = cam_to_edit.get_rotation()
+
+    new_tvec = deepcopy(cam_to_edit.get_translation())
+    new_rvec = deepcopy(cam_to_edit.get_rotation())
 
     if x_trans is not None:
         curr_tvec[0] = cam_to_edit.init_trans[0] + x_trans
@@ -376,6 +457,11 @@ def update_fig(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks
     if z_rot is not None:
         curr_rvec[2] = cam_to_edit.init_rot[2] + z_rot
 
+    if np.array_equal(curr_rvec, new_rvec) and np.array_equal(curr_tvec, new_tvec):
+        changed_extrinsics = False
+    else:
+        changed_extrinsics = True
+
     cam_to_edit.set_translation(curr_tvec)
     cam_to_edit.set_rotation(curr_rvec)
 
@@ -389,19 +475,24 @@ def update_fig(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks
 
     cam_group.cameras[int(cam_val) - 1] = cam_to_edit
 
-    if n_clicks != N_CLICKS:
-        f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
+    if n_clicks_reset != N_CLICKS_RESET:
+        cam_group = cam_group_reset
+        new_fig = plot_cams_and_points(
+            cam_group=cam_group,
+            points_3d=None,
+        )
+        N_CLICKS_RESET = n_clicks_reset
 
+    # This means we must triangualte
+    if n_clicks_triangulate != N_CLICKS_TRIANGULATE:
+        f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
+        POINTS_3D = points_3d_init
         points_2d_reproj = reproject_points(points_3d_init, cam_group, info_dict)
         points_2d_og = refill_arr(pts_array_2d, info_dict)
 
-        '''
-        joined_list_2d = reproject_3d_points(
-            points_3d_init, info_dict, pts_array_2d, cam_group
+        reproj_paths = get_reproject_images(
+            points_2d_reproj, points_2d_og, path_images, i=frame_i
         )
-        '''
-
-        reproj_paths = get_reproject_images(points_2d_reproj, points_2d_og, path_images)
 
         div_images = make_div_images(reproj_paths)
 
@@ -409,13 +500,52 @@ def update_fig(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks
             cam_group=cam_group,
             points_3d=points_3d_init,
         )
-        N_CLICKS = n_clicks
+        N_CLICKS_TRIANGULATE = n_clicks_triangulate
 
-    else:
+    # This means we must bundle adjust
+    elif n_clicks_bundle != N_CLICKS_BUNDLE:
+
+        cam_group_reset = deepcopy(cam_group)
+
+        res, points_3d_init = cam_group.bundle_adjust(pts_array_2d)
+        POINTS_3D = points_3d_init
+
+        points_2d_reproj = reproject_points(points_3d_init, cam_group, info_dict)
+        points_2d_og = refill_arr(pts_array_2d, info_dict)
+
+        reproj_paths = get_reproject_images(
+            points_2d_reproj, points_2d_og, path_images, i=frame_i
+        )
+
+        div_images = make_div_images(reproj_paths)
+
         new_fig = plot_cams_and_points(
             cam_group=cam_group,
-            points_3d=None,
+            points_3d=points_3d_init,
         )
+        N_CLICKS_BUNDLE = n_clicks_bundle
+
+    else:
+        if N_CLICKS_TRIANGULATE > 0 or N_CLICKS_BUNDLE > 0 and POINTS_3D is not None and not changed_extrinsics:
+            points_2d_reproj = reproject_points(POINTS_3D, cam_group, info_dict)
+            points_2d_og = refill_arr(pts_array_2d, info_dict)
+
+            reproj_paths = get_reproject_images(
+                points_2d_reproj, points_2d_og, path_images, i=frame_i
+            )
+            div_images = make_div_images(reproj_paths)
+
+            new_fig = plot_cams_and_points(
+                cam_group=cam_group,
+                points_3d=POINTS_3D,
+            )
+        else:
+            div_images = make_div_images([i[frame_i] for i in path_images])
+
+            new_fig = plot_cams_and_points(
+                cam_group=cam_group,
+                points_3d=None,
+            )
 
     fig = go.Figure(data=new_fig["data"], layout=fig["layout"])
 
@@ -423,4 +553,4 @@ def update_fig(cam_val, x_trans, y_trans, z_trans, x_rot, y_rot, z_rot, n_clicks
 
 
 if __name__ == "__main__":
-    app.run_server(debug=True, use_reloader=False)
+    app.run_server(debug=True)
