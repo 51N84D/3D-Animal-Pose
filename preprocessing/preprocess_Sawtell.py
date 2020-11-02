@@ -2,11 +2,7 @@ from __future__ import print_function
 import os
 import numpy as np
 from pathlib import Path
-import re
 from utils.utils_IO import (
-    ordered_arr_3d_to_dict,
-    refill_nan_array,
-    arr_2d_to_list_of_dicts,
     sorted_alphanumeric,
 )
 
@@ -50,7 +46,6 @@ def get_data():
     view_names = ["top", "main", "right"]
     assert len(view_names) == num_cameras
 
-
     # NOTE: Empty list keeps all bodyparts
     bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
 
@@ -76,9 +71,8 @@ def get_data():
     if len(bp_to_keep) > 0:
         num_analyzed_body_parts = int(len(new_skeleton_names) / num_cameras)
 
-
     # (num views, num frames, num points per frame, 2)
-    multiview_pts_2d = np.empty(    
+    multiview_pts_2d = np.empty(
         shape=(num_cameras, pts_array.shape[0], num_analyzed_body_parts, 2)
     )
     for i, view_name in enumerate(view_names):

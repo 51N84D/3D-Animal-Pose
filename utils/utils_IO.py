@@ -156,8 +156,11 @@ def ordered_arr_3d_to_dict(pts_array_3d, info_dict):
     return pose_dict
 
 
-def refill_nan_array(pts_array_clean, info_dict, dimension, num_cameras):
+def refill_nan_array(pts_array_clean, info_dict, dimension):
     """we take our chopped array and embedd it in a full array with nans"""
+
+    num_cameras = info_dict["num_cameras"]
+
     if dimension == "3d":
         pts_refill = np.empty(
             (info_dict["num_frames"] * info_dict["num_analyzed_body_parts"], 3)
@@ -251,7 +254,9 @@ def write_video(image_dir, out_file, fps=5):
         size = (width, height)
         img_array.append(img)
 
-    out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, size)  # 15 fps
+    out = cv2.VideoWriter(
+        out_file, cv2.VideoWriter_fourcc("m", "p", "4", "v"), fps, size
+    )  # 15 fps
 
     for i in range(len(img_array)):
         out.write(img_array[i])
@@ -269,9 +274,7 @@ def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
 
     num_cameras = len(cam_group.cameras)
 
-    array_2d_orig = refill_nan_array(
-        pts_array_2d_og, info_dict, dimension="2d", num_cameras=num_cameras
-    )
+    array_2d_orig = refill_nan_array(pts_array_2d_og, info_dict, dimension="2d")
     pose_list_2d_orig = arr_2d_to_list_of_dicts(array_2d_orig, info_dict)
 
     points_proj = []
@@ -282,10 +285,9 @@ def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
 
     # pts_2d_reproj
     array_2d_reproj_back = refill_nan_array(
-        points_proj, info_dict, dimension="2d", num_cameras=num_cameras
-    )
+        points_proj, info_dict, dimension="2d")
     pose_list_2d_reproj = arr_2d_to_list_of_dicts(array_2d_reproj_back, info_dict)
 
     joined_list_2d = pose_list_2d_orig + pose_list_2d_reproj
-    
+
     return joined_list_2d

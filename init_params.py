@@ -10,22 +10,28 @@ from dash.dependencies import Input, Output
 import numpy as np
 from anipose_BA import CameraGroup, Camera
 from utils.utils_plotting import plot_cams_and_points, plot_image_labels
-from utils.utils_IO import reproject_3d_points, read_image
+from utils.utils_IO import (
+    reproject_3d_points,
+    read_image,
+    refill_nan_array,
+    ordered_arr_3d_to_dict,
+)
 import plotly.io as pio
 import plotly.graph_objs as go
-from preprocessing.preprocess_Sawtell import get_data
+
+# from preprocessing.preprocess_Sawtell import get_data
+from preprocessing.preprocess_IBL import get_data
+
 import base64
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import sys
 from pathlib import Path
 import json
 from copy import deepcopy
 
-import time
 
 pio.renderers.default = None
 
@@ -151,6 +157,16 @@ def make_div_images(image_path=[]):
             )
         )
     return div_images
+
+
+def get_points_at_frame(points_3d, i=0):
+    global info_dict
+    BA_array_3d_back = refill_nan_array(points_3d, info_dict, dimension="3d")
+    BA_dict = ordered_arr_3d_to_dict(BA_array_3d_back, info_dict)
+    slice_3d = np.asarray(
+        [BA_dict["x_coords"][i], BA_dict["y_coords"][i], BA_dict["z_coords"][i]]
+    ).transpose()
+    return slice_3d
 
 
 def write_params(param_file="params.json"):
@@ -303,6 +319,35 @@ app.layout = html.Div(
                     },
                 ),
                 html.Div(
+                    div_images,
+                    id="images",
+                    style={
+                        "float": "left",
+                        "marginTop": 20,
+                        "marginBottom": 100,
+                        "max-height": "500px",
+                    },
+                ),
+                html.Div(
+                    dcc.Graph(
+                        id="skeleton-graph",
+                        figure={
+                            "data": None,
+                            "layout": {
+                                "uirevision": "nothing",
+                                "showlegend": False,
+                                "title": "Points at Frame 0",
+                            },
+                        },
+                    ),
+                    style={
+                        "float": "left",
+                        "marginTop": 0,
+                        "marginLeft": 100,
+                        "width": 400,
+                    },
+                ),
+                html.Div(
                     dcc.Graph(
                         id="main-graph",
                         figure={
@@ -310,22 +355,17 @@ app.layout = html.Div(
                             "layout": {"uirevision": "nothing"},
                         },
                     ),
-                    style={"float": "right", "marginTop": 0},
-                ),
-                html.Div(
-                    div_images,
-                    id="images",
                     style={
-                        "float": "center",
-                        "marginTop": 100,
-                        "marginBottom": 100,
-                        "max-height": "500px",
+                        "float": "right",
+                        "marginTop": 0,
+                        "width": 400,
+                        "marginBottom": 500,
                     },
                 ),
             ],
             className="row",
         ),
-        html.Div(trans_sliders, style={"float": "bottom", "marginTop": 100}),
+        html.Div(trans_sliders, style={"float": "bottom", "marginTop": 500}),
         html.Div(
             rot_sliders,
             style={"float": "bottom", "marginTop": 20},
@@ -393,6 +433,7 @@ def update_sliders(cam_val):
 @app.callback(
     [
         dash.dependencies.Output("main-graph", "figure"),
+        dash.dependencies.Output("skeleton-graph", "figure"),
         dash.dependencies.Output("images", "children"),
     ],
     [
@@ -502,6 +543,14 @@ def update_fig(
         )
         N_CLICKS_TRIANGULATE = n_clicks_triangulate
 
+        slice_3d = get_points_at_frame(POINTS_3D, frame_i)
+
+        skel_fig = plot_cams_and_points(
+            cam_group=cam_group,
+            points_3d=slice_3d,
+            point_size=5,
+            title=f"3D Points at frame {frame_i}",
+        )
     # This means we must bundle adjust
     elif n_clicks_bundle != N_CLICKS_BUNDLE:
 
@@ -525,8 +574,21 @@ def update_fig(
         )
         N_CLICKS_BUNDLE = n_clicks_bundle
 
+        slice_3d = get_points_at_frame(POINTS_3D, frame_i)
+
+        skel_fig = plot_cams_and_points(
+            cam_group=cam_group,
+            points_3d=slice_3d,
+            point_size=5,
+        )
+
     else:
-        if N_CLICKS_TRIANGULATE > 0 or N_CLICKS_BUNDLE > 0 and POINTS_3D is not None and not changed_extrinsics:
+        if (
+            N_CLICKS_TRIANGULATE > 0
+            or N_CLICKS_BUNDLE > 0
+            and POINTS_3D is not None
+            and not changed_extrinsics
+        ):
             points_2d_reproj = reproject_points(POINTS_3D, cam_group, info_dict)
             points_2d_og = refill_arr(pts_array_2d, info_dict)
 
@@ -539,6 +601,15 @@ def update_fig(
                 cam_group=cam_group,
                 points_3d=POINTS_3D,
             )
+
+            slice_3d = get_points_at_frame(POINTS_3D, frame_i)
+
+            skel_fig = plot_cams_and_points(
+                cam_group=cam_group,
+                points_3d=slice_3d,
+                point_size=5,
+            )
+
         else:
             div_images = make_div_images([i[frame_i] for i in path_images])
 
@@ -547,9 +618,21 @@ def update_fig(
                 points_3d=None,
             )
 
+            skel_fig = plot_cams_and_points(
+                cam_group=None,
+                points_3d=None,
+            )
+
     fig = go.Figure(data=new_fig["data"], layout=fig["layout"])
 
-    return {"data": fig["data"], "layout": fig["layout"]}, div_images
+    skel_fig_layout = deepcopy(fig)
+    skel_fig_layout.update_layout(title={"text": f"3D Points at Frame {frame_i}"})
+
+    return (
+        {"data": fig["data"], "layout": fig["layout"]},
+        {"data": skel_fig["data"], "layout": skel_fig_layout['layout']},
+        div_images,
+    )
 
 
 if __name__ == "__main__":
