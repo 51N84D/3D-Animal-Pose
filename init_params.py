@@ -9,18 +9,17 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 import numpy as np
 from anipose_BA import CameraGroup, Camera
-from utils.utils_plotting import plot_cams_and_points, plot_image_labels
+from utils.utils_plotting import plot_cams_and_points
 from utils.utils_IO import (
-    reproject_3d_points,
-    read_image,
     refill_nan_array,
     ordered_arr_3d_to_dict,
 )
 import plotly.io as pio
 import plotly.graph_objs as go
 
-# from preprocessing.preprocess_Sawtell import get_data
-from preprocessing.preprocess_IBL import get_data
+from preprocessing.preprocess_Sawtell import get_data
+
+# from preprocessing.preprocess_IBL import get_data
 
 import base64
 import matplotlib
@@ -41,21 +40,19 @@ def get_cameras(
 ):
     cameras = []
     for i in range(num_cameras):
-        cam = Camera(rvec=[0, 0, 0], tvec=[0, 0, 0])
-        cam_init_params = np.abs(np.random.rand(8))
-
-        # Set rotations [0:3] and translation [3:6] to 0
-        cam_init_params[0:6] = 0
-        # Initialize focal length to image width
-        if isinstance(focal_length, list):
-            cam_init_params[6] = focal_length[i]
+        if i == 0:
+            cam = Camera(rvec=[-np.pi / 2, 0, 0], tvec=[0, -2, 2])
+        elif i == 1:
+            cam = Camera(rvec=[0, 0, 0], tvec=[0, 0, 0])
         else:
-            cam_init_params[6] = focal_length
-        # Initialize distortion to 0
-        cam_init_params[7] = 0.0
+            cam = Camera(rvec=[0, -np.pi / 2, 0], tvec=[2, 0, 2])
+
+        if isinstance(focal_length, list):
+            cam.set_focal_length(focal_length[i])
+        else:
+            cam.set_focal_length(focal_length)
 
         # Set Offset
-        cam.set_params(cam_init_params)
         cam_mat = cam.get_camera_matrix()
         cam_mat[0, 2] = img_widths[i] // 2
         cam_mat[1, 2] = img_heights[i] // 2
@@ -109,21 +106,24 @@ def reproject_points(points_3d, cam_group, info_dict):
     return multivew_filled_points_2d
 
 
-def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
+def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0, broh=""):
     # For each camera
     reproj_dir = Path("./reproject_images")
     reproj_dir.mkdir(exist_ok=True, parents=True)
     for cam_num in range(len(path_images)):
         img_path = path_images[cam_num][i]
         img = plt.imread(img_path)
-        implot = plt.imshow(img)
+        plt.imshow(img)
 
         plt.scatter(
             points_2d_og[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="red"
         )
         plt.scatter(
-            points_2d_reproj[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="blue"
+            points_2d_reproj[cam_num, i, :, 0],
+            points_2d_reproj[cam_num, i, :, 1],
+            c="blue",
         )
+
         plt.savefig(
             reproj_dir / f"view_{cam_num}_img_{i}.png",
             bbox_inches="tight",
@@ -185,6 +185,78 @@ def write_params(param_file="params.json"):
         json.dump(param_dict, outfile, indent=4)
 
 
+def get_translation_sliders(num_cameras):
+    trans_sliders = []
+    trans_slider_vals = {}
+    trans_slider_ids = ["x", "y", "z"]
+    for i in range(3):
+        trans_sliders.append(
+            dcc.Slider(
+                id=f"{trans_slider_ids[i]}-translate",
+                min=-5,
+                max=5,
+                value=0,
+                step=0.01,
+                marks={
+                    -1: "-1",
+                    -2: "-2",
+                    -3: "-3",
+                    -4: "-4",
+                    -5: "-5",
+                    0: f"{trans_slider_ids[i]}-translate",
+                    1: "1",
+                    2: "2",
+                    3: "3",
+                    4: "4",
+                    5: "5",
+                },
+            )
+        )
+
+    for i in range(num_cameras):
+        trans_slider_vals[i] = {"x": 0, "y": 0, "z": 0}
+    return trans_sliders, trans_slider_vals
+
+
+def get_rotation_sliders(num_cameras):
+    rot_sliders = []
+    rot_slider_vals = {}
+    rot_slider_ids = ["x", "y", "z"]
+    for i in range(3):
+        rot_sliders.append(
+            dcc.Slider(
+                id=f"{rot_slider_ids[i]}-rotate",
+                min=-np.pi,
+                max=np.pi,
+                value=0,
+                step=0.01,
+                marks={
+                    -np.pi: "-\u03C0",
+                    -3 * np.pi / 4.0: "-3\u03C0/4",
+                    -np.pi / 2.0: "-\u03C0/2",
+                    -np.pi / 4.0: "-\u03C0/4",
+                    0: f"{rot_slider_ids[i]}-rotate",
+                    np.pi: "\u03C0",
+                    3 * np.pi / 4.0: "3\u03C0/4",
+                    np.pi / 2.0: "\u03C0/2",
+                    np.pi / 4.0: "\u03C0/4",
+                },
+            )
+        )
+
+    for i in range(num_cameras):
+        rot_slider_vals[i] = {"x": 0, "y": 0, "z": 0}
+    return rot_sliders, rot_slider_vals
+
+
+def get_dropdown(num_cameras):
+    dropdown_options = []
+    for i in range(num_cameras):
+        dropdown_options.append({"label": f"Cam {i + 1}", "value": i + 1})
+    return dropdown_options
+
+
+# --------------Define global variables-------------------------
 experiment_data = get_data()
 pts_array_2d = experiment_data["pts_array_2d"]
 img_width = experiment_data["img_width"]
@@ -211,69 +283,14 @@ N_CLICKS_BUNDLE = 0
 N_CLICKS_RESET = 0
 POINTS_3D = None
 
+trans_sliders, trans_slider_vals = get_translation_sliders(num_cameras)
+rot_sliders, rot_slider_vals = get_rotation_sliders(num_cameras)
+dropdown_options = get_dropdown(num_cameras)
+# ------------------------------------------------------------
+# ------------------------------------------------------------
+
+# ----------------------Define App----------------------------
 app = dash.Dash(__name__)
-
-trans_sliders = []
-trans_slider_vals = {}
-trans_slider_ids = ["x", "y", "z"]
-for i in range(3):
-    trans_sliders.append(
-        dcc.Slider(
-            id=f"{trans_slider_ids[i]}-translate",
-            min=-5,
-            max=5,
-            value=0,
-            step=0.01,
-            marks={
-                -1: "-1",
-                -2: "-2",
-                -3: "-3",
-                -4: "-4",
-                -5: "-5",
-                0: f"{trans_slider_ids[i]}-translate",
-                1: "1",
-                2: "2",
-                3: "3",
-                4: "4",
-                5: "5",
-            },
-        )
-    )
-
-rot_sliders = []
-rot_slider_vals = {}
-rot_slider_ids = ["x", "y", "z"]
-for i in range(3):
-    rot_sliders.append(
-        dcc.Slider(
-            id=f"{rot_slider_ids[i]}-rotate",
-            min=-np.pi,
-            max=np.pi,
-            value=0,
-            step=0.01,
-            marks={
-                -np.pi: "-\u03C0",
-                -3 * np.pi / 4.0: "-3\u03C0/4",
-                -np.pi / 2.0: "-\u03C0/2",
-                -np.pi / 4.0: "-\u03C0/4",
-                0: f"{rot_slider_ids[i]}-rotate",
-                np.pi: "\u03C0",
-                3 * np.pi / 4.0: "3\u03C0/4",
-                np.pi / 2.0: "\u03C0/2",
-                np.pi / 4.0: "\u03C0/4",
-            },
-        )
-    )
-
-for i in range(len(cam_group.cameras)):
-    trans_slider_vals[i] = {"x": 0, "y": 0, "z": 0}
-
-for i in range(len(cam_group.cameras)):
-    rot_slider_vals[i] = {"x": 0, "y": 0, "z": 0}
-
-dropdown_options = []
-for i in range(len(cam_group.cameras)):
-    dropdown_options.append({"label": f"Cam {i + 1}", "value": i + 1})
 
 app.layout = html.Div(
     children=[
@@ -380,6 +397,10 @@ app.layout = html.Div(
         html.Div(id="write-out", children="", style={"float": "right"}),
     ]
 )
+# ------------------------------------------------------------
+# ------------------------------------------------------------
+
+# --------------------Define Callbacks------------------------
 
 
 @app.callback(
@@ -387,22 +408,21 @@ app.layout = html.Div(
     [Input("write-button", "n_clicks")],
 )
 def params_out(n_clicks):
+    """Write parameters to file"""
     write_params()
     return ""
 
 
-"""
 @app.callback(
     Output("focal-out", "children"),
     [Input("focal-len", "value")],
 )
-def update_output(focal_length):
+def update_focal(focal_length):
+    """Update focal lengths from input"""
     global cam_group
-    print("BROH: UPDATING FOCAL LENGTH")
     for cam in cam_group.cameras:
         cam.set_focal_length(float(focal_length))
     return f"Focal length {focal_length}"
-"""
 
 
 @app.callback(
@@ -419,6 +439,7 @@ def update_output(focal_length):
     ],
 )
 def update_sliders(cam_val):
+    """Update slider values to match selected camera"""
     x_val_trans = trans_slider_vals[int(cam_val) - 1]["x"]
     y_val_trans = trans_slider_vals[int(cam_val) - 1]["y"]
     z_val_trans = trans_slider_vals[int(cam_val) - 1]["z"]
@@ -463,6 +484,7 @@ def update_fig(
     n_clicks_reset,
     frame_i,
 ):
+    """Main function to update figure and plot 3D points"""
     global fig
     global trans_slider_vals
     global N_CLICKS_TRIANGULATE
@@ -528,11 +550,12 @@ def update_fig(
     if n_clicks_triangulate != N_CLICKS_TRIANGULATE:
         f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
         POINTS_3D = points_3d_init
+
         points_2d_reproj = reproject_points(points_3d_init, cam_group, info_dict)
         points_2d_og = refill_arr(pts_array_2d, info_dict)
 
         reproj_paths = get_reproject_images(
-            points_2d_reproj, points_2d_og, path_images, i=frame_i
+            points_2d_reproj, points_2d_og, path_images, i=frame_i, broh="triangulate"
         )
 
         div_images = make_div_images(reproj_paths)
@@ -563,7 +586,7 @@ def update_fig(
         points_2d_og = refill_arr(pts_array_2d, info_dict)
 
         reproj_paths = get_reproject_images(
-            points_2d_reproj, points_2d_og, path_images, i=frame_i
+            points_2d_reproj, points_2d_og, path_images, i=frame_i, broh="bundle"
         )
 
         div_images = make_div_images(reproj_paths)
@@ -630,9 +653,13 @@ def update_fig(
 
     return (
         {"data": fig["data"], "layout": fig["layout"]},
-        {"data": skel_fig["data"], "layout": skel_fig_layout['layout']},
+        {"data": skel_fig["data"], "layout": skel_fig_layout["layout"]},
         div_images,
     )
+
+
+# ------------------------------------------------------------
+# ------------------------------------------------------------
 
 
 if __name__ == "__main__":

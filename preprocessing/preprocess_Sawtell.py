@@ -13,6 +13,7 @@ def get_data():
     data_dir = Path("./data/Sawtell-data").resolve()
     filename = data_dir / "tank_dataset_5.h5"
     f = h5py.File(filename, "r")
+    """
     print("-------------DATASET INFO--------------")
     print("keys: ", f.keys())
     print("annotated: ", f["annotated"])
@@ -21,6 +22,7 @@ def get_data():
     print("skeleton: ", f["skeleton"])
     print("skeleton_names: ", f["skeleton_names"])
     print("----------------------------------------")
+    """
 
     # Read frame limits:
     import commentjson
@@ -47,7 +49,8 @@ def get_data():
     assert len(view_names) == num_cameras
 
     # NOTE: Empty list keeps all bodyparts
-    bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
+    # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
+    bp_to_keep = ["chin"]
 
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
@@ -101,7 +104,10 @@ def get_data():
     # clean_point_indices = np.arange(multiview_pts_2d.shape[1])
 
     # Clean up nans
-    nan_rows = np.isnan(multiview_pts_2d).any(axis=-0).any(axis=-1)
+    count_nans = np.sum(np.isnan(multiview_pts_2d), axis=0)[:, 0]
+    nan_rows = count_nans > num_cameras - 2
+    # nan_rows = np.isnan(multiview_pts_2d).any(axis=-0).any(axis=-1)
+
     pts_all_flat = np.arange(multiview_pts_2d.shape[1])
     pts_array_2d = multiview_pts_2d[:, ~nan_rows, :]
     clean_point_indices = pts_all_flat[~nan_rows]
@@ -146,8 +152,6 @@ def get_data():
     focal_length_mm = 15
     sensor_size = 12
     for i in range(num_cameras):
-        # focal_length = (focal_length_mm * img_widths[i]) / sensor_size
-        # focal_length = (focal_length_mm * img_heights[i]) / sensor_size
         focal_length = (
             focal_length_mm * ((img_heights[i] ** 2 + img_widths[i] ** 2) ** (1 / 2))
         ) / sensor_size
