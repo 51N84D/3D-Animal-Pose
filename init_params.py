@@ -17,7 +17,8 @@ from utils.utils_IO import (
 import plotly.io as pio
 import plotly.graph_objs as go
 
-from preprocessing.preprocess_Sawtell import get_data
+# from preprocessing.preprocess_Sawtell import get_data
+from preprocessing.preprocess_Sawtell_DLC import get_data
 
 # from preprocessing.preprocess_IBL import get_data
 
@@ -41,11 +42,11 @@ def get_cameras(
     cameras = []
     for i in range(num_cameras):
         if i == 0:
-            cam = Camera(rvec=[-np.pi / 2, 0, 0], tvec=[0, -2, 2])
+            cam = Camera(rvec=[-np.pi / 2, 0, 0], tvec=[0, -1.94, 1.72])
         elif i == 1:
             cam = Camera(rvec=[0, 0, 0], tvec=[0, 0, 0])
         else:
-            cam = Camera(rvec=[0, -np.pi / 2, 0], tvec=[2, 0, 2])
+            cam = Camera(rvec=[0, -np.pi / 2, 0], tvec=[1.86, 0, 1.72])
 
         if isinstance(focal_length, list):
             cam.set_focal_length(focal_length[i])
@@ -166,6 +167,14 @@ def get_points_at_frame(points_3d, i=0):
     slice_3d = np.asarray(
         [BA_dict["x_coords"][i], BA_dict["y_coords"][i], BA_dict["z_coords"][i]]
     ).transpose()
+
+    """
+    # Now normalize w.r.t. first point
+    slice_3d[:, 0] -= slice_3d[0, 0]
+    slice_3d[:, 1] -= slice_3d[0, 1]
+    slice_3d[:, 2] -= slice_3d[0, 2]
+    """
+
     return slice_3d
 
 
@@ -328,7 +337,7 @@ app.layout = html.Div(
                         min=0,
                         max=len(path_images[0]) - 1,
                         step=1,
-                        value=0,
+                        value=31,
                         vertical=True,
                     ),
                     style={
@@ -352,7 +361,6 @@ app.layout = html.Div(
                             "data": None,
                             "layout": {
                                 "uirevision": "nothing",
-                                "showlegend": False,
                                 "title": "Points at Frame 0",
                             },
                         },
@@ -413,6 +421,7 @@ def params_out(n_clicks):
     return ""
 
 
+'''
 @app.callback(
     Output("focal-out", "children"),
     [Input("focal-len", "value")],
@@ -423,6 +432,7 @@ def update_focal(focal_length):
     for cam in cam_group.cameras:
         cam.set_focal_length(float(focal_length))
     return f"Focal length {focal_length}"
+'''
 
 
 @app.callback(
@@ -567,12 +577,20 @@ def update_fig(
         N_CLICKS_TRIANGULATE = n_clicks_triangulate
 
         slice_3d = get_points_at_frame(POINTS_3D, frame_i)
+        print("SLICE_3D: ", slice_3d.shape)
+        skeleton_bp = {}
+        skeleton_bp["chin_base"] = tuple(slice_3d[0, :])
+        skeleton_bp["chin_mid"] = tuple(slice_3d[-2, :])
+        skeleton_bp["chin_end"] = tuple(slice_3d[-1, :])
+        skeleton_lines = [("chin_base", "chin_mid"), ("chin_mid", "chin_end")]
 
         skel_fig = plot_cams_and_points(
-            cam_group=cam_group,
+            cam_group=None,
             points_3d=slice_3d,
             point_size=5,
             title=f"3D Points at frame {frame_i}",
+            skeleton_bp=skeleton_bp,
+            skeleton_lines=skeleton_lines,
         )
     # This means we must bundle adjust
     elif n_clicks_bundle != N_CLICKS_BUNDLE:
@@ -599,10 +617,18 @@ def update_fig(
 
         slice_3d = get_points_at_frame(POINTS_3D, frame_i)
 
+        skeleton_bp = {}
+        skeleton_bp["chin_base"] = tuple(slice_3d[0, :])
+        skeleton_bp["chin_mid"] = tuple(slice_3d[1, :])
+        skeleton_bp["chin_end"] = tuple(slice_3d[2, :])
+        skeleton_lines = [("chin_base", "chin_mid"), ("chin_mid", "chin_end")]
+
         skel_fig = plot_cams_and_points(
-            cam_group=cam_group,
+            cam_group=None,
             points_3d=slice_3d,
             point_size=5,
+            skeleton_bp=skeleton_bp,
+            skeleton_lines=skeleton_lines,
         )
 
     else:
@@ -626,11 +652,19 @@ def update_fig(
             )
 
             slice_3d = get_points_at_frame(POINTS_3D, frame_i)
+            skeleton_bp = {}
+            skeleton_bp["chin_base"] = tuple(slice_3d[0, :])
+            skeleton_bp["chin_mid"] = tuple(slice_3d[1, :])
+            skeleton_bp["chin_end"] = tuple(slice_3d[2, :])
+            skeleton_lines = [("chin_base", "chin_mid"), ("chin_mid", "chin_end")]
 
             skel_fig = plot_cams_and_points(
-                cam_group=cam_group,
+                cam_group=None,
                 points_3d=slice_3d,
                 point_size=5,
+                scene_aspect="cube",
+                skeleton_bp=skeleton_bp,
+                skeleton_lines=skeleton_lines,
             )
 
         else:
@@ -650,6 +684,17 @@ def update_fig(
 
     skel_fig_layout = deepcopy(fig)
     skel_fig_layout.update_layout(title={"text": f"3D Points at Frame {frame_i}"})
+    if POINTS_3D is not None:
+        skel_fig_layout.update_layout(
+            scene=dict(
+                xaxis=dict(range=[np.nanmin(POINTS_3D[:, 0]), np.nanmax(POINTS_3D[:, 0])]),
+                yaxis=dict(range=[np.nanmin(POINTS_3D[:, 1]), np.nanmax(POINTS_3D[:, 1])]),
+                zaxis=dict(range=[np.nanmin(POINTS_3D[:, 2]), np.nanmax(POINTS_3D[:, 2])]),
+            )
+        )
+
+    skel_fig_layout["layout"]["uirevision"] = "nothing"
+    skel_fig_layout["layout"]["scene"]["aspectmode"] = "cube"
 
     return (
         {"data": fig["data"], "layout": fig["layout"]},

@@ -456,6 +456,7 @@ def plot_cams_and_points(
     skeleton_lines=None,
     line_colors=None,
     point_colors=None,
+    legend=False
 ):
     """
     Plots the coordinate systems of the cameras along with the 3D points
@@ -552,7 +553,8 @@ def plot_cams_and_points(
     fig.update_layout(scene_aspectmode=scene_aspect)
     fig.update_layout(scene_camera=scene_camera)
     fig.update_layout(margin=dict(l=0, r=0, b=0, t=0))
-    fig.update_layout(showlegend=False)
+    if not legend:
+        fig.update_layout(showlegend=False)
 
     fig.update_layout(
         title={
