@@ -12,6 +12,8 @@ import numpy as np
 import matplotlib.image as mpimg
 import cv2
 import os
+import re
+
 
 # pickle utils
 def save_object(obj, filename):
@@ -156,17 +158,22 @@ def ordered_arr_3d_to_dict(pts_array_3d, info_dict):
 
 def refill_nan_array(pts_array_clean, info_dict, dimension):
     """we take our chopped array and embedd it in a full array with nans"""
+
+    num_cameras = info_dict["num_cameras"]
+
     if dimension == "3d":
         pts_refill = np.empty(
             (info_dict["num_frames"] * info_dict["num_analyzed_body_parts"], 3)
         )
         pts_refill[:] = np.NaN
         pts_refill[info_dict["clean_point_indices"], :] = pts_array_clean
+
     else:
+
         pts_all_flat = np.arange(
             info_dict["num_frames"] * info_dict["num_analyzed_body_parts"]
         )
-        indices_init = np.concatenate([pts_all_flat, pts_all_flat])
+        indices_init = np.concatenate([pts_all_flat] * num_cameras)
 
         pts_refill = np.empty(
             (
@@ -176,10 +183,12 @@ def refill_nan_array(pts_array_clean, info_dict, dimension):
                 2,
             )
         )
+
         pts_refill[:] = np.NaN
         pts_refill[
             np.isin(indices_init, info_dict["clean_point_indices"]), :
         ] = pts_array_clean
+
     return pts_refill
 
 
@@ -224,9 +233,17 @@ def make_image_array(img_indexes, flip):
     return img_array
 
 
-def write_video(image_dir, out_file):
+# sorts incoming files alphanumerically into list
+def sorted_alphanumeric(data):
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split("([0-9]+)", key)]
+    return sorted(data, key=alphanum_key)
+
+
+def write_video(image_dir, out_file, fps=5):
     im_list = os.listdir(image_dir)
-    im_list.sort()
+    im_list = sorted_alphanumeric(im_list)
+    # im_list.sort(key=lambda x: int(x.split(".")[0]))
     if ".DS_Store" in im_list:
         im_list.remove(".DS_Store")
 
@@ -237,7 +254,9 @@ def write_video(image_dir, out_file):
         size = (width, height)
         img_array.append(img)
 
-    out = cv2.VideoWriter(out_file, cv2.VideoWriter_fourcc(*"DIVX"), 5, size)  # 15 fps
+    out = cv2.VideoWriter(
+        out_file, cv2.VideoWriter_fourcc("m", "p", "4", "v"), fps, size
+    )  # 15 fps
 
     for i in range(len(img_array)):
         out.write(img_array[i])
@@ -252,6 +271,9 @@ def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
     pts_array_2d_og = np.reshape(
         pts_array_2d, (pts_array_2d.shape[0] * pts_array_2d.shape[1], -1)
     )
+
+    num_cameras = len(cam_group.cameras)
+
     array_2d_orig = refill_nan_array(pts_array_2d_og, info_dict, dimension="2d")
     pose_list_2d_orig = arr_2d_to_list_of_dicts(array_2d_orig, info_dict)
 
@@ -268,3 +290,27 @@ def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
     joined_list_2d = pose_list_2d_orig + pose_list_2d_reproj
 
     return joined_list_2d
+
+
+def combine_images(images=[]):
+    max_width = 0  # find the max width of all the images
+    total_height = 0  # the total height of the images (vertical stacking)
+
+    for img in images:
+        # open all images and find their sizes
+        if img.shape[1] > max_width:
+            max_width = img.shape[1]
+        total_height += img.shape[0]
+
+    # create a new array with a size large enough to contain all the images
+    final_image = np.zeros((total_height, max_width, 3), dtype=np.uint8)
+
+    current_y = (
+        0  # keep track of where your current image was last placed in the y coordinate
+    )
+    for image in images:
+        # add an image to the final array and increment the y coordinate
+        final_image[current_y : image.shape[0] + current_y, : image.shape[1], :] = image
+        current_y += image.shape[0]
+
+    return final_image

@@ -3,11 +3,6 @@ import os
 import numpy as np
 from pathlib import Path
 import re
-from utils.utils_IO import (
-    ordered_arr_3d_to_dict,
-    refill_nan_array,
-    arr_2d_to_list_of_dicts,
-)
 
 
 def sorted_nicely(l):
@@ -108,14 +103,15 @@ def get_data(eid="cb2ad999-a6cb-42ff-bf71-1774c57e5308", trial_range=[5, 7]):
     focal_length_mm = 16
     sensor_size = 12.7
 
+    focal_length = focal_length_mm * IMG_WIDTH_1 / sensor_size
+
     return {
         "img_width": [IMG_WIDTH_1, IMG_WIDTH_2],
         "img_height": [IMG_HEIGHT_1, IMG_HEIGHT_2],
         "pts_array_2d": pts_array_2d,
         "info_dict": info_dict,
         "path_images": path_images,
-        "focal_length_mm": focal_length_mm,
-        "sensor_size": sensor_size,
+        "focal_length": [focal_length]*info_dict["num_cameras"],
     }
 
 
