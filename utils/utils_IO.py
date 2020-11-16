@@ -284,10 +284,33 @@ def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
     points_proj = np.concatenate(points_proj, axis=0)
 
     # pts_2d_reproj
-    array_2d_reproj_back = refill_nan_array(
-        points_proj, info_dict, dimension="2d")
+    array_2d_reproj_back = refill_nan_array(points_proj, info_dict, dimension="2d")
     pose_list_2d_reproj = arr_2d_to_list_of_dicts(array_2d_reproj_back, info_dict)
 
     joined_list_2d = pose_list_2d_orig + pose_list_2d_reproj
 
     return joined_list_2d
+
+
+def combine_images(images=[]):
+    max_width = 0  # find the max width of all the images
+    total_height = 0  # the total height of the images (vertical stacking)
+
+    for img in images:
+        # open all images and find their sizes
+        if img.shape[1] > max_width:
+            max_width = img.shape[1]
+        total_height += img.shape[0]
+
+    # create a new array with a size large enough to contain all the images
+    final_image = np.zeros((total_height, max_width, 3), dtype=np.uint8)
+
+    current_y = (
+        0  # keep track of where your current image was last placed in the y coordinate
+    )
+    for image in images:
+        # add an image to the final array and increment the y coordinate
+        final_image[current_y : image.shape[0] + current_y, : image.shape[1], :] = image
+        current_y += image.shape[0]
+
+    return final_image

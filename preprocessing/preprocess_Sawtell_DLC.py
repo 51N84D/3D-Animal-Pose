@@ -26,6 +26,7 @@ def get_data():
     print("skeleton_names: ", f["skeleton_names"])
     print("----------------------------------------")
 
+    print("broh: ", np.asarray(f['skeleton']).shape)
     img_settings_file = data_dir / "image_settings.json"
     img_settings = commentjson.load(open(str(img_settings_file), "r"))
     num_cameras = len(img_settings["height_lims"])
@@ -60,10 +61,7 @@ def get_data():
     pts_array = np.concatenate((x_points, y_points), axis=-1)
 
     #Make Nans if low confidence:
-
-    print((confidences < 0.5).shape)
     pts_array[confidences < 0.5] = np.nan
-    print(pts_array[confidences < 0.5].shape)
     
     # Get number of frames
     num_frames = pts_array.shape[0]
@@ -81,12 +79,15 @@ def get_data():
 
     # NOTE: Empty list keeps all bodyparts
     # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
-    bp_to_keep = ["chin", "mid", "head"]
+    bp_to_keep = ["chin", "mid", "head", 'caudal', 'worm', 'tail']
+    #bp_to_keep = []
+
 
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
 
     new_skeleton_names = []
+    bodyparts = []
     for idx, name in enumerate(f["skeleton_names"]):
         if len(bp_to_keep) > 0:
             skip_bp = True
@@ -104,7 +105,6 @@ def get_data():
 
     if len(bp_to_keep) > 0:
         num_analyzed_body_parts = int(len(new_skeleton_names) / num_cameras)
-
 
     # (num views, num frames, num points per frame, 2)
     multiview_pts_2d = np.empty(
@@ -127,6 +127,10 @@ def get_data():
             -1,
         ),
     )
+    
+    print('*********************')
+    print(new_skeleton_names)
+    print('*********************')
 
 
     assert multiview_pts_2d.shape[-1] == 2
@@ -198,6 +202,7 @@ def get_data():
         "info_dict": info_dict,
         "path_images": path_images,
         "focal_length": focal_lengths,
+        "bodypart_names": new_skeleton_names
     }
 
 

@@ -9,10 +9,12 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 import numpy as np
 from anipose_BA import CameraGroup, Camera
-from utils.utils_plotting import plot_cams_and_points
+from utils.utils_plotting import plot_cams_and_points, draw_circles
 from utils.utils_IO import (
     refill_nan_array,
     ordered_arr_3d_to_dict,
+    read_image,
+    combine_images,
 )
 import plotly.io as pio
 import plotly.graph_objs as go
@@ -32,6 +34,9 @@ from pathlib import Path
 import json
 from copy import deepcopy
 
+from PIL import Image
+import cv2
+from tqdm import tqdm
 
 pio.renderers.default = None
 
@@ -41,6 +46,8 @@ def get_cameras(
 ):
     cameras = []
     for i in range(num_cameras):
+        # Manual initialization
+        '''
         if i == 0:
             cam = Camera(rvec=[-np.pi / 2, 0, 0], tvec=[0, -1.94, 1.72])
         elif i == 1:
@@ -52,6 +59,9 @@ def get_cameras(
             cam.set_focal_length(focal_length[i])
         else:
             cam.set_focal_length(focal_length)
+        '''
+
+        cam = Camera(rvec=[0, 0, 0], tvec=[0, 0, 0])
 
         # Set Offset
         cam_mat = cam.get_camera_matrix()
@@ -107,56 +117,91 @@ def reproject_points(points_3d, cam_group, info_dict):
     return multivew_filled_points_2d
 
 
-def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0, broh=""):
+def get_skeleton_parts(slice_3d):
+    skeleton_bp = {}
+    skeleton_bp["head"] = tuple(slice_3d[0, :])
+    skeleton_bp["chin_base"] = tuple(slice_3d[1, :])
+    skeleton_bp["chin_mid"] = tuple(slice_3d[2, :])
+    skeleton_bp["chin_end"] = tuple(slice_3d[3, :])
+    skeleton_bp["mid"] = tuple(slice_3d[4, :])
+    skeleton_bp["tail"] = tuple(slice_3d[5, :])
+    skeleton_bp["caudal_d"] = tuple(slice_3d[6, :])
+    skeleton_bp["caudal_v"] = tuple(slice_3d[7, :])
+
+    skeleton_lines = [
+        ("caudal_d", "tail"),
+        ("caudal_v", "tail"),
+        ("tail", "mid"),
+        ("mid", "head"),
+        ("head", "chin_base"),
+        ("chin_base", "chin_mid"),
+        ("chin_mid", "chin_end"),
+    ]
+
+    # return skeleton_bp, skeleton_lines
+    return None, None
+
+
+def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
     # For each camera
     reproj_dir = Path("./reproject_images")
     reproj_dir.mkdir(exist_ok=True, parents=True)
+
+    images = []
     for cam_num in range(len(path_images)):
         img_path = path_images[cam_num][i]
         img = plt.imread(img_path)
-        plt.imshow(img)
-
-        plt.scatter(
-            points_2d_og[cam_num, i, :, 0], points_2d_og[cam_num, i, :, 1], c="red"
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        draw_circles(
+            img, points_2d_og[cam_num, i, :, :].astype(np.int32), "red", point_size=5
         )
-        plt.scatter(
-            points_2d_reproj[cam_num, i, :, 0],
-            points_2d_reproj[cam_num, i, :, 1],
-            c="blue",
+        draw_circles(
+            img,
+            points_2d_reproj[cam_num, i, :, :].astype(np.int32),
+            "blue",
+            point_size=5,
         )
+        images.append(img)
 
-        plt.savefig(
-            reproj_dir / f"view_{cam_num}_img_{i}.png",
-            bbox_inches="tight",
-            pad_inches=0,
-        )
-        plt.clf()
-
-    plt.close()
-
-    return [
-        reproj_dir / f"view_{cam_num}_img_{i}.png"
-        for cam_num in range(len(path_images))
-    ]
+    return images
 
 
-def make_div_images(image_path=[]):
+def make_div_images(images=[], is_path=True):
     div_images = []
     # First set height:
-    max_height = 400 / len(image_path)
-    for i in range(len(image_path)):
-        image_filename = image_path[i]  # replace with your own image
-        encoded_image = base64.b64encode(open(image_filename, "rb").read())
+    max_height = 400 / len(images)
 
-        div_images.append(
-            html.Div(
-                html.Img(
-                    src="data:image/png;base64,{}".format(encoded_image.decode()),
-                    style={"max-height": f"{max_height}px", "float": "center"},
-                ),
-                style={"textAlign": "center"},
+    if is_path:
+        for i in range(len(images)):
+            image_filename = images[i]  # replace with your own image
+
+            encoded_image = base64.b64encode(open(image_filename, "rb").read())
+
+            div_images.append(
+                html.Div(
+                    html.Img(
+                        src="data:image/png;base64,{}".format(encoded_image.decode()),
+                        style={"max-height": f"{max_height}px", "float": "center"},
+                    ),
+                    style={"textAlign": "center"},
+                )
             )
-        )
+
+    else:
+        for img in images:
+            retval, buffer = cv2.imencode(".jpg", img)
+            encoded_image = base64.b64encode(buffer)
+
+            div_images.append(
+                html.Div(
+                    html.Img(
+                        src="data:image/png;base64,{}".format(encoded_image.decode()),
+                        style={"max-height": f"{max_height}px", "float": "center"},
+                    ),
+                    style={"textAlign": "center"},
+                )
+            )
+
     return div_images
 
 
@@ -167,13 +212,6 @@ def get_points_at_frame(points_3d, i=0):
     slice_3d = np.asarray(
         [BA_dict["x_coords"][i], BA_dict["y_coords"][i], BA_dict["z_coords"][i]]
     ).transpose()
-
-    """
-    # Now normalize w.r.t. first point
-    slice_3d[:, 0] -= slice_3d[0, 0]
-    slice_3d[:, 1] -= slice_3d[0, 1]
-    slice_3d[:, 2] -= slice_3d[0, 2]
-    """
 
     return slice_3d
 
@@ -274,6 +312,8 @@ focal_length = experiment_data["focal_length"]
 path_images = experiment_data["path_images"]
 info_dict = experiment_data["info_dict"]
 num_cameras = info_dict["num_cameras"]
+bodypart_names = experiment_data["bodypart_names"]
+num_frames = info_dict["num_frames"]
 
 div_images = make_div_images([i[0] for i in path_images])
 
@@ -400,9 +440,19 @@ app.layout = html.Div(
             html.Button("Write params to file", id="write-button", n_clicks=0),
             style={"float": "right"},
         ),
+        html.Div(id="write-out", children="", style={"float": "right"}),
+        html.Div(
+            html.Button("Save plots", id="plot-button", n_clicks=0),
+            style={"float": "right"},
+        ),
+        html.Div(id="plot-out", children="", style={"float": "right"}),
+        html.Div(
+            html.Button("Save reprojections", id="reproj-button", n_clicks=0),
+            style={"float": "right"},
+        ),
+        html.Div(id="reproj-out", children="", style={"float": "right"}),
         html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length[0]))),
         html.Div(id="focal-out"),
-        html.Div(id="write-out", children="", style={"float": "right"}),
     ]
 )
 # ------------------------------------------------------------
@@ -418,6 +468,119 @@ app.layout = html.Div(
 def params_out(n_clicks):
     """Write parameters to file"""
     write_params()
+    return ""
+
+
+@app.callback(
+    Output("plot-out", "children"),
+    [Input("plot-button", "n_clicks")],
+)
+def save_skeleton(n_clicks):
+    """Write parameters to file"""
+    if n_clicks == 0:
+        return
+    global num_frames
+    for frame_i in tqdm(range(345, 2635)):
+        plot_dir = Path("./3D_plots")
+        plot_dir.mkdir(exist_ok=True, parents=True)
+        slice_3d = get_points_at_frame(POINTS_3D, i=frame_i)
+
+        if np.all(np.isnan(slice_3d)):
+            slice_3d = np.zeros((1, 3))
+            skel_fig = plot_cams_and_points(
+                cam_group=None,
+                points_3d=slice_3d,
+                point_size=0,
+                skeleton_bp=None,
+                skeleton_lines=None,
+            )
+        else:
+            skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
+            skel_fig = plot_cams_and_points(
+                cam_group=None,
+                points_3d=slice_3d,
+                point_size=5,
+                skeleton_bp=skeleton_bp,
+                skeleton_lines=skeleton_lines,
+                font_size=10,
+            )
+
+        xe = 0
+        ye = -1
+        ze = -2
+        scene_camera = dict(
+            up=dict(x=0, y=-1, z=0),
+            # center=dict(x=0, y=0.1, z=0),
+            eye=dict(x=xe, y=ye, z=ze),
+        )
+
+        skel_fig_layout = deepcopy(fig)
+
+        skel_fig_layout.update_layout(title={"text": f"3D Points at Frame {frame_i}"})
+
+        padding = []
+        scaling = 0.5
+        padding.append(np.nanmax(POINTS_3D[:, 0]) - np.nanmin(POINTS_3D[:, 0]))
+        padding.append(np.nanmax(POINTS_3D[:, 1]) - np.nanmin(POINTS_3D[:, 1]))
+        padding.append(np.nanmax(POINTS_3D[:, 2]) - np.nanmin(POINTS_3D[:, 2]))
+        padding = np.asarray(padding) * scaling
+
+        skel_fig_layout.update_layout(
+            scene=dict(
+                xaxis=dict(
+                    range=[
+                        np.nanmin(POINTS_3D[:, 0]),
+                        np.nanmax(POINTS_3D[:, 0]) + padding[0],
+                    ]
+                ),
+                yaxis=dict(
+                    range=[
+                        np.nanmin(POINTS_3D[:, 1]) - padding[1],
+                        np.nanmax(POINTS_3D[:, 1]) + padding[1],
+                    ]
+                ),
+                zaxis=dict(
+                    range=[
+                        np.nanmin(POINTS_3D[:, 2]),
+                        np.nanmax(POINTS_3D[:, 2]),
+                    ]
+                ),
+            )
+        )
+
+        skel_fig_layout["layout"]["uirevision"] = "nothing"
+        skel_fig_layout["layout"]["scene"]["aspectmode"] = "cube"
+        skel_fig_layout.update_layout(scene_camera=scene_camera)
+
+        skel_fig["layout"] = skel_fig_layout["layout"]
+
+        skel_fig.write_image(str(plot_dir / f"3dpoints_{frame_i}.png"))
+
+    return ""
+
+
+@app.callback(
+    Output("reproj-out", "children"),
+    [Input("reproj-button", "n_clicks")],
+)
+def save_reproj(n_clicks):
+    """Write parameters to file"""
+    if n_clicks == 0:
+        return
+    global num_frames
+    points_2d_reproj = reproject_points(POINTS_3D, cam_group, info_dict)
+    points_2d_og = refill_arr(pts_array_2d, info_dict)
+
+    for frame_i in tqdm(range(num_frames - 1)):
+        plot_dir = Path("./Reprojections")
+        plot_dir.mkdir(exist_ok=True, parents=True)
+
+        reproj_images = get_reproject_images(
+            points_2d_reproj, points_2d_og, path_images, i=frame_i
+        )
+        combined_proj = combine_images(reproj_images)
+        cv2.imwrite(str(plot_dir / f"reproj_{frame_i}.jpg"), combined_proj)
+
     return ""
 
 
@@ -565,10 +728,10 @@ def update_fig(
         points_2d_og = refill_arr(pts_array_2d, info_dict)
 
         reproj_paths = get_reproject_images(
-            points_2d_reproj, points_2d_og, path_images, i=frame_i, broh="triangulate"
+            points_2d_reproj, points_2d_og, path_images, i=frame_i
         )
 
-        div_images = make_div_images(reproj_paths)
+        div_images = make_div_images(reproj_paths, is_path=False)
 
         new_fig = plot_cams_and_points(
             cam_group=cam_group,
@@ -577,12 +740,7 @@ def update_fig(
         N_CLICKS_TRIANGULATE = n_clicks_triangulate
 
         slice_3d = get_points_at_frame(POINTS_3D, frame_i)
-        print("SLICE_3D: ", slice_3d.shape)
-        skeleton_bp = {}
-        skeleton_bp["chin_base"] = tuple(slice_3d[0, :])
-        skeleton_bp["chin_mid"] = tuple(slice_3d[-2, :])
-        skeleton_bp["chin_end"] = tuple(slice_3d[-1, :])
-        skeleton_lines = [("chin_base", "chin_mid"), ("chin_mid", "chin_end")]
+        skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
 
         skel_fig = plot_cams_and_points(
             cam_group=None,
@@ -604,10 +762,10 @@ def update_fig(
         points_2d_og = refill_arr(pts_array_2d, info_dict)
 
         reproj_paths = get_reproject_images(
-            points_2d_reproj, points_2d_og, path_images, i=frame_i, broh="bundle"
+            points_2d_reproj, points_2d_og, path_images, i=frame_i
         )
 
-        div_images = make_div_images(reproj_paths)
+        div_images = make_div_images(reproj_paths, is_path=False)
 
         new_fig = plot_cams_and_points(
             cam_group=cam_group,
@@ -617,11 +775,7 @@ def update_fig(
 
         slice_3d = get_points_at_frame(POINTS_3D, frame_i)
 
-        skeleton_bp = {}
-        skeleton_bp["chin_base"] = tuple(slice_3d[0, :])
-        skeleton_bp["chin_mid"] = tuple(slice_3d[1, :])
-        skeleton_bp["chin_end"] = tuple(slice_3d[2, :])
-        skeleton_lines = [("chin_base", "chin_mid"), ("chin_mid", "chin_end")]
+        skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
 
         skel_fig = plot_cams_and_points(
             cam_group=None,
@@ -644,7 +798,7 @@ def update_fig(
             reproj_paths = get_reproject_images(
                 points_2d_reproj, points_2d_og, path_images, i=frame_i
             )
-            div_images = make_div_images(reproj_paths)
+            div_images = make_div_images(reproj_paths, is_path=False)
 
             new_fig = plot_cams_and_points(
                 cam_group=cam_group,
@@ -652,11 +806,8 @@ def update_fig(
             )
 
             slice_3d = get_points_at_frame(POINTS_3D, frame_i)
-            skeleton_bp = {}
-            skeleton_bp["chin_base"] = tuple(slice_3d[0, :])
-            skeleton_bp["chin_mid"] = tuple(slice_3d[1, :])
-            skeleton_bp["chin_end"] = tuple(slice_3d[2, :])
-            skeleton_lines = [("chin_base", "chin_mid"), ("chin_mid", "chin_end")]
+
+            skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
 
             skel_fig = plot_cams_and_points(
                 cam_group=None,
@@ -685,11 +836,39 @@ def update_fig(
     skel_fig_layout = deepcopy(fig)
     skel_fig_layout.update_layout(title={"text": f"3D Points at Frame {frame_i}"})
     if POINTS_3D is not None:
+        padding = []
+        scaling = [0.2, 0.2, 0.2]
+        padding.append(
+            (np.nanmax(POINTS_3D[:, 0]) - np.nanmin(POINTS_3D[:, 0])) * scaling[0]
+        )
+        padding.append(
+            (np.nanmax(POINTS_3D[:, 1]) - np.nanmin(POINTS_3D[:, 1])) * scaling[1]
+        )
+        padding.append(
+            (np.nanmax(POINTS_3D[:, 2]) - np.nanmin(POINTS_3D[:, 2])) * scaling[2]
+        )
+        padding = np.asarray(padding)
+
         skel_fig_layout.update_layout(
             scene=dict(
-                xaxis=dict(range=[np.nanmin(POINTS_3D[:, 0]), np.nanmax(POINTS_3D[:, 0])]),
-                yaxis=dict(range=[np.nanmin(POINTS_3D[:, 1]), np.nanmax(POINTS_3D[:, 1])]),
-                zaxis=dict(range=[np.nanmin(POINTS_3D[:, 2]), np.nanmax(POINTS_3D[:, 2])]),
+                xaxis=dict(
+                    range=[
+                        np.nanmin(POINTS_3D[:, 0]) - padding[0],
+                        np.nanmax(POINTS_3D[:, 0]) + padding[0],
+                    ]
+                ),
+                yaxis=dict(
+                    range=[
+                        np.nanmin(POINTS_3D[:, 1]) - padding[0],
+                        np.nanmax(POINTS_3D[:, 1]) + padding[0],
+                    ]
+                ),
+                zaxis=dict(
+                    range=[
+                        np.nanmin(POINTS_3D[:, 2]) - padding[0],
+                        np.nanmax(POINTS_3D[:, 2]) + padding[0],
+                    ]
+                ),
             )
         )
 
