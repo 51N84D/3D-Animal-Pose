@@ -6,6 +6,7 @@ import os
 import re
 from tqdm import tqdm
 from utils_IO import write_video
+import numpy as np
 
 
 def sorted_nicely(l):
@@ -37,6 +38,7 @@ def combine_frames(
     video_dir=None,
     fps=5,
 ):
+    print("Combining frames...")
     # Create dir to save combined images
     combined_dir = Path(combined_dir)
     combined_dir.mkdir(parents=True, exist_ok=True)
@@ -57,25 +59,37 @@ def combine_frames(
 
     for i in tqdm(range(ind_start, ind_end)):
         total_width = 0
-        total_height = 0
+        total_height = np.inf
         images = []
+
+        # Get smallest height
         for frames in nested_frames:
             img = Image.open(frames[i])
-            images.append(img)
+            width, height = img.size
+            if height < total_height:
+                total_height = height
+
+        # Get total width
+        for frames in nested_frames:
+            img = Image.open(frames[i])
             width, height = img.size
             if height > total_height:
-                total_height = height
-            total_width += width
+                # Resize image while maintaining ratio
+                new_w = int(width * (total_height / height))
+                img = img.resize((new_w, total_height), Image.BICUBIC)
+            total_width += img.size[0]
+            images.append(img)
 
         new_im = Image.new("RGB", (total_width, total_height))
         curr_width = 0
         for img in images:
             new_im.paste(img, (curr_width, 0))
-            curr_width, height = img.size
+            curr_width, _ = img.size
 
         new_im.save(str(combined_dir / f"combined_{i}.png"))
 
     if video_dir is not None:
+        print("Writing video...")
         write_video(image_dir=combined_dir, out_file="./combined.mp4", fps=fps)
 
 

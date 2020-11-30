@@ -68,7 +68,14 @@ def get_data(eid="cb2ad999-a6cb-42ff-bf71-1774c57e5308", trial_range=[5, 7]):
 
     pts_array_2d_with_nans = np.array([cam1, cam2])
 
+
     num_cameras, num_points_all, _ = pts_array_2d_with_nans.shape
+
+    pts_array_2d_joints = pts_array_2d_with_nans.reshape(
+        num_cameras, len(times_left), num_analyzed_body_parts, 2
+    )
+
+    np.save('/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/ibl.npy', pts_array_2d_joints)
 
     # remove nans (any of the x_r,y_r, x_l, y_l) and keep clean_point_indices
     non_nan_idc = ~np.isnan(pts_array_2d_with_nans).any(axis=2).any(axis=0)
@@ -86,10 +93,10 @@ def get_data(eid="cb2ad999-a6cb-42ff-bf71-1774c57e5308", trial_range=[5, 7]):
     IMG_HEIGHT_1 = IMG_HEIGHT_2 = 512
 
     left_path = Path(
-        f"/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_example/{eid}_trials_{trial_range[0]}_{trial_range[1]}/imgs_left"
+        f"/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_example/{eid}_trials_{trial_range[0]}_{trial_range[1]}/images/imgs_left"
     )
     right_path = Path(
-        f"/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_example/{eid}_trials_{trial_range[0]}_{trial_range[1]}/imgs_right"
+        f"/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_example/{eid}_trials_{trial_range[0]}_{trial_range[1]}/images/imgs_right"
     )
     left_frames = sorted_nicely(os.listdir(left_path))
     left_frames.append(left_frames[-1])
@@ -111,13 +118,13 @@ def get_data(eid="cb2ad999-a6cb-42ff-bf71-1774c57e5308", trial_range=[5, 7]):
         "pts_array_2d": pts_array_2d,
         "info_dict": info_dict,
         "path_images": path_images,
-        "focal_length": [focal_length]*info_dict["num_cameras"],
+        "focal_length": [focal_length] * info_dict["num_cameras"],
     }
 
 
 if __name__ == "__main__":
-    eid = "cb2ad999-a6cb-42ff-bf71-1774c57e5308"
-    # eid = 'e5fae088-ed96-4d9b-82f9-dfd13c259d52'
-    trial_range = [5, 7]
-    # trial_range = [10,13]
+    #eid = "cb2ad999-a6cb-42ff-bf71-1774c57e5308"
+    eid = 'e5fae088-ed96-4d9b-82f9-dfd13c259d52'
+    #trial_range = [5, 7]
+    trial_range = [10,13]
     get_data(eid, trial_range)

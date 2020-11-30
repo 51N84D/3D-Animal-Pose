@@ -601,7 +601,7 @@ class CameraGroup:
         loss="linear",
         threshold=50,
         ftol=1e-5,
-        max_nfev=500,
+        max_nfev=20,
         weights=None,
         start_params=None,
         verbose=True,
@@ -671,8 +671,7 @@ class CameraGroup:
             #params[a : a + 3] = cam.init_rot
             #params[a + 3 : a + 6] = cam.init_trans
             #Neglect distortion
-            params[a + 7] = 0
-            #params[a + 6] = cam
+            #params[a + 7] = 0
             focal_len = cam.get_focal_length()
             params[a + 6] = focal_len
             cam.set_params(params[a:b])

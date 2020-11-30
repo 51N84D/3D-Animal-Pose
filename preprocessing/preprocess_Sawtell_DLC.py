@@ -4,17 +4,21 @@ import numpy as np
 from pathlib import Path
 import sys
 import pandas as pd
+
 sys.path.append(str(Path(__file__).resolve().parent.parent.resolve()))
 from utils.utils_IO import (
     sorted_alphanumeric,
 )
 import commentjson
+from copy import deepcopy
 
 
 def get_data():
     import h5py
 
-    data_dir = Path("/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data").resolve()
+    data_dir = Path(
+        "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data"
+    ).resolve()
     filename = data_dir / "tank_dataset_5.h5"
     f = h5py.File(filename, "r")
     print("-------------DATASET INFO--------------")
@@ -26,13 +30,14 @@ def get_data():
     print("skeleton_names: ", f["skeleton_names"])
     print("----------------------------------------")
 
-    print("broh: ", np.asarray(f['skeleton']).shape)
     img_settings_file = data_dir / "image_settings.json"
     img_settings = commentjson.load(open(str(img_settings_file), "r"))
     num_cameras = len(img_settings["height_lims"])
 
-    data_dir = Path("/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking").resolve()
-    dlc_file = data_dir / 'videoEOD_cropped000_tracking.csv'
+    data_dir = Path(
+        "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking"
+    ).resolve()
+    dlc_file = data_dir / "videoEOD_cropped000_tracking.csv"
     dlc_data = pd.read_csv(dlc_file)
 
     # points are (num_frames, 3 * num_bodyparts)
@@ -46,12 +51,12 @@ def get_data():
     confidences = []
     skeleton_names = []
     for i, name in enumerate(columns):
-        if name.endswith('x'):
+        if name.endswith("x"):
             x_points.append(dlc_points[:, i])
             skeleton_names.append(name[:-2])
-        elif name.endswith('y'):
+        elif name.endswith("y"):
             y_points.append(dlc_points[:, i])
-        elif name.endswith('confidence'):
+        elif name.endswith("confidence"):
             confidences.append(dlc_points[:, i])
 
     x_points = np.asarray(x_points).transpose()[:, :, np.newaxis]
@@ -60,9 +65,12 @@ def get_data():
 
     pts_array = np.concatenate((x_points, y_points), axis=-1)
 
-    #Make Nans if low confidence:
+    print(pts_array.shape)
+
+    # Make Nans if low confidence:
     pts_array[confidences < 0.5] = np.nan
-    
+    print("pts_array: ", pts_array.shape)
+
     # Get number of frames
     num_frames = pts_array.shape[0]
 
@@ -79,9 +87,8 @@ def get_data():
 
     # NOTE: Empty list keeps all bodyparts
     # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
-    bp_to_keep = ["chin", "mid", "head", 'caudal', 'worm', 'tail']
-    #bp_to_keep = []
-
+    bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
+    # bp_to_keep = []
 
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
@@ -118,6 +125,9 @@ def get_data():
         view_points[:, :, 1] -= img_settings["height_lims"][i][0]
         multiview_pts_2d[i, :, :, :] = view_points
 
+    pts_array_2d_joints = deepcopy(multiview_pts_2d)
+
+    print("multiview_pts_2d_joints: ", multiview_pts_2d.shape)
     # Now, convert to (num views, num points * num frames, 2)
     multiview_pts_2d = np.reshape(
         multiview_pts_2d,
@@ -127,19 +137,10 @@ def get_data():
             -1,
         ),
     )
-    
-    print('*********************')
-    print(new_skeleton_names)
-    print('*********************')
-
-
+    multiview_pts_2d
     assert multiview_pts_2d.shape[-1] == 2
 
     num_points_all = multiview_pts_2d.shape[1]
-
-    # pts_array_2d = multiview_pts_2d
-    # clean_point_indices = np.arange(multiview_pts_2d.shape[1])
-
     # Clean up nans
     count_nans = np.sum(np.isnan(multiview_pts_2d), axis=0)[:, 0]
     nan_rows = count_nans > num_cameras - 2
@@ -157,7 +158,7 @@ def get_data():
     info_dict["clean_point_indices"] = clean_point_indices
 
     # Get path images
-    multivew_images_dir = data_dir / 'images'
+    multivew_images_dir = data_dir / "images"
     view_dirs = os.listdir(multivew_images_dir)
     # NOTE: assumes folders for each view are ordered the same as in image_settings.json
     # i.e. view_0 corresponds to height_lims[0]
@@ -195,15 +196,23 @@ def get_data():
 
         focal_lengths.append(focal_length)
 
+    # Write points
+    points_path = Path('/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/sawtell.npy')
+    np.save(points_path, pts_array_2d_joints)
+
+    '''
     return {
         "img_width": img_widths,
         "img_height": img_heights,
-        "pts_array_2d": pts_array_2d,
+        "pts_array_2d": multiview_pts_2d,
+        "pts_array_2d_filtered": pts_array_2d,
+        "pts_array_2d_joints": pts_array_2d_joints,
         "info_dict": info_dict,
         "path_images": path_images,
         "focal_length": focal_lengths,
-        "bodypart_names": new_skeleton_names
+        "bodypart_names": new_skeleton_names,
     }
+    '''
 
 
 if __name__ == "__main__":
