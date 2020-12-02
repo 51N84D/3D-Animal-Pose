@@ -3,7 +3,15 @@ import re
 import os
 from pathlib import Path
 import numpy as np
+import pandas as pd
+#import argparse
+import json
+import commentjson
+from preprocessing.utils import get_pixel_focal_lengths, get_image_dims
 
+# parser = argparse.ArgumentParser()
+# parser.add_argument("--dataset_path", default='../Video_Datasets/Costa-Sep-19', help='str with folder path') # example '../Video_Datasets/Costa-Sep-19'
+# args, _ = parser.parse_known_args()
 
 def sorted_nicely(l):
     """ Sort the given iterable in the way that humans expect."""
@@ -11,13 +19,18 @@ def sorted_nicely(l):
     alphanum_key = lambda key: [convert(c) for c in re.split("([0-9]+)", key)]
     return sorted(l, key=alphanum_key)
 
-
-def get_data():
-    data_dir = Path("./data/CostaData").resolve()
+def get_data(dataset_path=None):
+    print("Argument:")
+    print(dataset_path)
+    data_dir = Path(dataset_path).resolve()
+    print("Current directory:")
+    print(os.getcwd())
+    print("Data directory:")
+    print(data_dir)
 
     # Read cam 1 points
     filename = (
-        data_dir / "camera-1_09-15DeepCut_resnet50_Joystick_cam1Sep13shuffle1_140000.h5"
+        data_dir / "cam1_09-15DeepCut_resnet50_Joystick_cam1Sep13shuffle1_140000.h5"
     )
     f = h5py.File(filename, "r")
     data_1 = f["df_with_missing"]["table"]
@@ -29,7 +42,7 @@ def get_data():
 
     # Read cam 2 points
     filename = (
-        data_dir / "camera-2_09-15DeepCut_resnet50_Joystick_cam2Sep13shuffle1_160000.h5"
+        data_dir / "cam2_09-15DeepCut_resnet50_Joystick_cam2Sep13shuffle1_160000.h5"
     )
     f = h5py.File(filename, "r")
     data_2 = f["df_with_missing"]["table"]
@@ -53,6 +66,7 @@ def get_data():
 
     # Find index
     for idx, i in enumerate(cam_1_images):
+        # idx is IIII and i is a string, and their numbers don't match
         if str(im_start) in i:
             cam1_start_idx = idx
             break
@@ -119,12 +133,34 @@ def get_data():
 
     clean_point_indices = np.arange(pts_array_2d.shape[1])
     info_dict["clean_point_indices"] = clean_point_indices
+    
+    img_heights, img_widths = get_image_dims(path_images)
+    
+    # assuming identical cams with roughly known params
+    focal_length_mm = np.repeat(6., len(img_widths))
+    sensor_size_mm = np.repeat(8.47, len(img_widths))
+    
+    focal_lengths = get_pixel_focal_lengths(focal_length_mm, 
+                                sensor_size_mm, 
+                                img_heights, 
+                                img_widths)
+    
+    return {
+        "img_width": img_widths,
+        "img_height": img_heights,
+        "pts_array_2d": pts_array_2d,
+        "info_dict": info_dict,
+        "path_images": path_images,
+        "focal_length": focal_lengths,
+        "bodypart_names": ["shoulder", "elbow", "EE"]
+    }
 
-    # Image size is 640x512
-    P_X_1 = 320
-    P_X_2 = 320
+    # # Image size is 640x512
+    # P_X_1 = 320
+    # P_X_2 = 320
 
-    P_Y_1 = 256
-    P_Y_2 = 256
-
-    return 0
+    # P_Y_1 = 256
+    # P_Y_2 = 256
+    
+    if __name__ == "__main__":
+        get_data()

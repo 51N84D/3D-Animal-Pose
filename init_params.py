@@ -16,6 +16,7 @@ from utils.utils_IO import (
 import plotly.io as pio
 import plotly.graph_objs as go
 
+
 from preprocessing.preprocess_Sawtell_DLC import get_data
 from preprocessing.process_config import read_yaml
 
@@ -32,6 +33,23 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 from tqdm import tqdm
 import argparse
+
+
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--dataset", default=None, help='str with name') 
+parser.add_argument("--dataset_path", default=None, help='str with folder path') 
+
+args, _ = parser.parse_known_args()
+
+if args.dataset == "Costa":
+	from preprocessing.preprocess_costa import get_data
+elif args.dataset == "Sawtell_fish":
+	from preprocessing.preprocess_Sawtell_DLC import get_data
+elif args.dataset == "IBL":
+	from preprocessing.preprocess_IBL import get_data
+else:
+	print("dataset is not supported")
 
 
 pio.renderers.default = None
@@ -68,13 +86,20 @@ def refill_arr(points_2d, info_dict):
     num_points_all = info_dict["num_points_all"]
     num_frames = info_dict["num_frames"]
     all_point_indices = np.arange(num_points_all)
+    print(clean_point_indices)
+    print(points_2d.shape)
 
     nan_point_indices = np.asarray(
         [x for x in all_point_indices if x not in clean_point_indices]
     )
-
+    print(nan_point_indices)
+    
+ 
     # If points_2d is (num_views, num_points, 2):
     if len(points_2d.shape) == 3:
+        if len(nan_point_indices) == 0:
+            return points_2d.reshape(points_2d.shape[0], num_frames, -1, points_2d.shape[-1])
+
         filled_points_2d = np.empty((points_2d.shape[0], num_points_all, 2))
         filled_points_2d[:, clean_point_indices, :] = points_2d
         filled_points_2d[:, nan_point_indices, :] = np.nan
@@ -84,6 +109,9 @@ def refill_arr(points_2d, info_dict):
 
     # Elif points2d is (num_points, 2) --> this happens if we consider each view separately
     elif len(points_2d.shape) == 2:
+        if len(nan_point_indices) == 0:
+            return points_2d.reshape(num_frames, -1, points_2d.shape[-1])
+
         filled_points_2d = np.empty((num_points_all, 2))
         filled_points_2d[clean_point_indices, :] = points_2d
         filled_points_2d[nan_point_indices, :] = np.nan
@@ -125,6 +153,7 @@ def reproject_points(points_3d, cam_group):
 
 
 def get_skeleton_parts(slice_3d):
+
     global config
 
     skeleton_bp = {}
@@ -146,6 +175,7 @@ def get_reproject_images(
     # For each camera
     reproj_dir = Path("./reproject_images")
     reproj_dir.mkdir(exist_ok=True, parents=True)
+    print(points_2d_og.shape)
 
     images = []
     for cam_num in range(len(path_images)):
@@ -153,6 +183,7 @@ def get_reproject_images(
 
         img_path = path_images[cam_num][i]
         img = plt.imread(img_path)
+
         if len(img.shape) == 3:
             if np.max(img) <= 1:
                 img *= 255
@@ -166,7 +197,7 @@ def get_reproject_images(
         nonfilled_indices = np.any(np.isnan(curr_points_2d_og), axis=-1)
 
         draw_circles(img, curr_points_2d_og.astype(np.int32), "red", point_size=5)
-
+        
         draw_circles(
             img,
             curr_points_2d_reproj.astype(np.int32),
@@ -363,6 +394,7 @@ pts_2d = pts_2d_joints.reshape(
 pts_2d_filtered, clean_point_indices = clean_nans(pts_2d)
 img_width = experiment_data["image_widths"]
 img_height = experiment_data["image_heights"]
+
 focal_length = experiment_data["focal_length"]
 path_images = experiment_data["frame_paths"]
 num_cameras = experiment_data["num_cams"]
