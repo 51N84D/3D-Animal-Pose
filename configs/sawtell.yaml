@@ -1,0 +1,41 @@
+path_to_images: "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking/images" # Should be a folder containing subfolders with frames from each view
+path_to_points: "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/sawtell.npy" # Shape must be (num_cameras, num_frames, num_bodyparts, 2)
+intrinsics:
+    focal_length:
+        focal_length_mm: 15
+        sensor_size: 12
+extrinsics: # NOTE: len(x) = len(y) = len(z) = number of cameras
+    translation: 
+        cam1: [0, -1.94, 1.72]
+        cam2: [0, 0, 0]
+        cam3: [1.86, 0, 1.72]
+    rotation: # Each entry will be multiplied by pi
+        cam1: [-1/2, 0, 0]
+        cam2: [0, 0, 0]
+        cam3: [0, -1/2, 0]
+bp_names: 
+    - 'head'
+    - 'chin_base'
+    - 'chin_mid'
+    - 'chin_end'
+    - 'mid'
+    - 'tail'
+    - 'caudal_d'
+    - 'caudal_v'
+skeleton:
+    - ["caudal_d", "tail"]
+    - ["caudal_v", "tail"]
+    - ["tail", "mid"]
+    - ["mid", "head"]
+    - ["head", "chin_base"]
+    - ["chin_base", "chin_mid"]
+    - ["chin_mid", "chin_end"]
+color_list:
+    - "purple"
+    - "green"
+    - "green"
+    - "green"
+    - "purple"
+    - "purple"
+    - "orange"
+    - "orange"

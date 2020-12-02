@@ -8,16 +8,17 @@ import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
 import numpy as np
-from anipose_BA import CameraGroup, Camera
-from utils.utils_plotting import plot_cams_and_points, draw_circles
+from utils.utils_plotting import plot_cams_and_points, draw_circles, drawLine
 from utils.utils_IO import (
-    refill_nan_array,
     ordered_arr_3d_to_dict,
-    read_image,
     combine_images,
 )
 import plotly.io as pio
 import plotly.graph_objs as go
+
+
+from preprocessing.preprocess_Sawtell_DLC import get_data
+from preprocessing.process_config import read_yaml
 
 import base64
 import matplotlib
@@ -28,10 +29,11 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import json
 from copy import deepcopy
-
-from PIL import Image
+from scipy.spatial.transform import Rotation as R
 import cv2
 from tqdm import tqdm
+import argparse
+
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -53,41 +55,33 @@ else:
 pio.renderers.default = None
 
 
-def get_cameras(
-    img_widths, img_heights, focal_length, num_cameras, rvecs=None, tvecs=None
-):
-    cameras = []
-    for i in range(num_cameras):
-        # Manual initialization
-        '''
-        if i == 0:
-            cam = Camera(rvec=[-np.pi / 2, 0, 0], tvec=[0, -1.94, 1.72])
-        elif i == 1:
-            cam = Camera(rvec=[0, 0, 0], tvec=[0, 0, 0])
-        else:
-            cam = Camera(rvec=[0, -np.pi / 2, 0], tvec=[1.86, 0, 1.72])
+def get_args():
+    parser = argparse.ArgumentParser(description="causal-gen")
 
-        if isinstance(focal_length, list):
-            cam.set_focal_length(focal_length[i])
-        else:
-            cam.set_focal_length(focal_length)
-        '''
+    # dataset
+    parser.add_argument("--config", type=str, default="./configs/sawtell.yaml")
+    parser.add_argument("--start_index", type=int, default=0)
+    parser.add_argument("--end_index", type=int)
+    parser.add_argument("--downsampling", type=int, default=1)
+    parser.add_argument("--plot_epipolar", action='store_true')
 
-        cam = Camera(rvec=[0, 0, 0], tvec=[0, 0, 0])
+    return parser.parse_args()
 
-        # Set Offset
-        cam_mat = cam.get_camera_matrix()
-        cam_mat[0, 2] = img_widths[i] // 2
-        cam_mat[1, 2] = img_heights[i] // 2
-        cam.set_camera_matrix(cam_mat)
-        cameras.append(cam)
 
-    cam_group = CameraGroup(cameras=cameras)
-    return cam_group
+def clean_nans(pts_array_2d):
+    # pts_array_2d should be (num_cams, num_frames * num_bodyparts, 2)
+    # Clean up nans
+    count_nans = np.sum(np.isnan(pts_array_2d), axis=0)[:, 0]
+    nan_rows = count_nans > pts_array_2d.shape[0] - 2
+
+    pts_all_flat = np.arange(pts_array_2d.shape[1])
+    pts_2d_filtered = pts_array_2d[:, ~nan_rows, :]
+    clean_point_indices = pts_all_flat[~nan_rows]
+    return pts_2d_filtered, clean_point_indices
 
 
 def refill_arr(points_2d, info_dict):
-
+    points_2d = deepcopy(points_2d)
     clean_point_indices = info_dict["clean_point_indices"]
     num_points_all = info_dict["num_points_all"]
     num_frames = info_dict["num_frames"]
@@ -122,49 +116,62 @@ def refill_arr(points_2d, info_dict):
         filled_points_2d[clean_point_indices, :] = points_2d
         filled_points_2d[nan_point_indices, :] = np.nan
         filled_points_2d = np.reshape(filled_points_2d, (num_frames, -1, 2))
+
     return filled_points_2d
 
 
-def reproject_points(points_3d, cam_group, info_dict):
+def get_F(pts_array_2d):
+    points_2d = deepcopy(pts_array_2d)
+    # Note, this returns pairwise F between view 1 to all other views
+    points_2d = points_2d[:, ~np.isnan(points_2d).any(axis=2).any(axis=0), :]
+
+    cam1_points = points_2d[0]
+    F = []
+    for i, single_view_points in enumerate(points_2d):
+        # Skip first view
+        if i == 0:
+            continue
+        curr_F, mask = cv2.findFundamentalMat(
+            cam1_points, single_view_points, cv2.FM_LMEDS
+        )
+        F.append(curr_F)
+
+    return F
+
+
+def reproject_points(points_3d, cam_group):
 
     multivew_filled_points_2d = []
 
     for cam in cam_group.cameras:
         points_2d = np.squeeze(cam.project(points_3d))
-        filled_points_2d = refill_arr(points_2d, info_dict)
-        # Now, reshape back to (num_frames, num_points per frame, 2):
-        multivew_filled_points_2d.append(filled_points_2d)
+        points_2d = points_2d.reshape(num_frames, num_bodyparts, 2)
+        multivew_filled_points_2d.append(points_2d)
 
     multivew_filled_points_2d = np.asarray(multivew_filled_points_2d)
     return multivew_filled_points_2d
 
 
 def get_skeleton_parts(slice_3d):
-    # skeleton_bp = {}
-    # skeleton_bp["head"] = tuple(slice_3d[0, :])
-    # skeleton_bp["chin_base"] = tuple(slice_3d[1, :])
-    # skeleton_bp["chin_mid"] = tuple(slice_3d[2, :])
-    # skeleton_bp["chin_end"] = tuple(slice_3d[3, :])
-    # skeleton_bp["mid"] = tuple(slice_3d[4, :])
-    # skeleton_bp["tail"] = tuple(slice_3d[5, :])
-    # skeleton_bp["caudal_d"] = tuple(slice_3d[6, :])
-    # skeleton_bp["caudal_v"] = tuple(slice_3d[7, :])
 
-    # skeleton_lines = [
-    #     ("caudal_d", "tail"),
-    #     ("caudal_v", "tail"),
-    #     ("tail", "mid"),
-    #     ("mid", "head"),
-    #     ("head", "chin_base"),
-    #     ("chin_base", "chin_mid"),
-    #     ("chin_mid", "chin_end"),
-    # ]
+    global config
 
-    # return skeleton_bp, skeleton_lines
-    return None, None
+    skeleton_bp = {}
+    
+    for i in range(slice_3d.shape[0]):
+        skeleton_bp[config.bp_names[i]] = tuple(slice_3d[i, :])
+    skeleton_lines = config.skeleton
+
+    return skeleton_bp, skeleton_lines
 
 
-def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
+def get_reproject_images(
+    points_2d_reproj, points_2d_og, path_images, i=0
+):
+    global F
+    global color_list
+    global plot_epipolar
+
     # For each camera
     reproj_dir = Path("./reproject_images")
     reproj_dir.mkdir(exist_ok=True, parents=True)
@@ -172,19 +179,52 @@ def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
 
     images = []
     for cam_num in range(len(path_images)):
+        cam1_points_2d_og = points_2d_og[0, i, :, :]
+
         img_path = path_images[cam_num][i]
         img = plt.imread(img_path)
-        if img.shape[-1] != 3:
+
+        if len(img.shape) == 3:
+            if np.max(img) <= 1:
+                img *= 255
+        else:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-        draw_circles(
-            img, points_2d_og[cam_num, i, :, :].astype(np.int32), "red", point_size=5
-        )
+
+        curr_points_2d_og = points_2d_og[cam_num, i, :, :]
+        curr_points_2d_reproj = points_2d_reproj[cam_num, i, :, :]
+
+        # Get indices of interpolated points
+        nonfilled_indices = np.any(np.isnan(curr_points_2d_og), axis=-1)
+
+        draw_circles(img, curr_points_2d_og.astype(np.int32), "red", point_size=5)
+        
         draw_circles(
             img,
-            points_2d_reproj[cam_num, i, :, :].astype(np.int32),
+            curr_points_2d_reproj.astype(np.int32),
             "blue",
             point_size=5,
+            nonfilled_indices=nonfilled_indices,
         )
+
+        # Draw epipolar lines
+        if cam_num != 0 and plot_epipolar:
+            cam1_points_2d_og = cam1_points_2d_og.astype(np.int32)
+            cam1_points_2d_og = cam1_points_2d_og[
+                ~np.isnan(cam1_points_2d_og).any(axis=1)
+            ]
+            ones = np.ones(cam1_points_2d_og.shape[0])[:, np.newaxis]
+            points_homog = np.concatenate((cam1_points_2d_og, ones), axis=-1)
+
+            aug_F = np.tile(F[cam_num - 1], (points_homog.shape[0], 1, 1))
+            lines = np.squeeze(np.matmul(aug_F, points_homog[:, :, np.newaxis]))
+            for j, line_vec in enumerate(lines):
+                # Get x and y intercepts (on image) to plot
+                # y = 0: x = -c/a
+                x_intercept = int(-line_vec[2] / line_vec[0])
+                # x = 0: y = -c/b
+                y_intercept = int(-line_vec[2] / line_vec[1])
+                img = drawLine(img, x_intercept, 0, 0, y_intercept, color=color_list[j])
+
         images.append(img)
 
     return images
@@ -230,12 +270,19 @@ def make_div_images(images=[], is_path=True):
 
 
 def get_points_at_frame(points_3d, i=0):
-    global info_dict
-    BA_array_3d_back = refill_nan_array(points_3d, info_dict, dimension="3d")
-    BA_dict = ordered_arr_3d_to_dict(BA_array_3d_back, info_dict)
-    slice_3d = np.asarray(
-        [BA_dict["x_coords"][i], BA_dict["y_coords"][i], BA_dict["z_coords"][i]]
-    ).transpose()
+
+    """
+    if filtered:
+        BA_array_3d_back = refill_nan_array(points_3d, info_dict, dimension="3d")
+        BA_dict = ordered_arr_3d_to_dict(BA_array_3d_back, info_dict)
+        slice_3d = np.asarray(
+            [BA_dict["x_coords"][i], BA_dict["y_coords"][i], BA_dict["z_coords"][i]]
+        ).transpose()
+    """
+
+    # else:
+    points_3d = points_3d.reshape(num_frames, num_bodyparts, 3)
+    slice_3d = points_3d[i, :, :]
 
     return slice_3d
 
@@ -328,20 +375,52 @@ def get_dropdown(num_cameras):
 
 
 # --------------Define global variables-------------------------
-experiment_data = get_data(args.dataset_path) # Dan: I changed this line to accept input
-pts_array_2d = experiment_data["pts_array_2d"]
-img_width = experiment_data["img_width"]
-img_height = experiment_data["img_height"]
+
+print("---------------- READING YAML--------------------")
+
+args = get_args()
+
+experiment_data = read_yaml(args.config)
+
+config = experiment_data['config']
+
+pts_2d_joints = experiment_data["points_2d_joints"]
+pts_2d_joints = experiment_data["points_2d_joints"]
+pts_2d = pts_2d_joints.reshape(
+    pts_2d_joints.shape[0],
+    pts_2d_joints.shape[1] * pts_2d_joints.shape[2],
+    pts_2d_joints.shape[3],
+)
+pts_2d_filtered, clean_point_indices = clean_nans(pts_2d)
+img_width = experiment_data["image_widths"]
+img_height = experiment_data["image_heights"]
+
 focal_length = experiment_data["focal_length"]
-path_images = experiment_data["path_images"]
-info_dict = experiment_data["info_dict"]
-num_cameras = info_dict["num_cameras"]
-bodypart_names = experiment_data["bodypart_names"]
-num_frames = info_dict["num_frames"]
+path_images = experiment_data["frame_paths"]
+num_cameras = experiment_data["num_cams"]
+if "bodypart_names" in experiment_data:
+    bodypart_names = experiment_data["bodypart_names"]
+num_bodyparts = experiment_data["num_bodyparts"]
+num_frames = experiment_data["num_frames"]
+
+ind_start = args.start_index
+ind_end = args.end_index
+if ind_end is None:
+    ind_end = num_frames
+downsampling = args.downsampling
+plot_epipolar = args.plot_epipolar
+
+print("------------------------------------------------")
+
+color_list = config.color_list
+
+# Get fundamental matrix
+F = get_F(pts_2d)
+
 
 div_images = make_div_images([i[0] for i in path_images])
 
-cam_group = get_cameras(img_width, img_height, focal_length, num_cameras)
+cam_group = experiment_data["cam_group"]
 cam_group_reset = cam_group
 
 fig = plot_cams_and_points(
@@ -479,8 +558,6 @@ app.layout = html.Div(
         html.Div(id="focal-out"),
     ]
 )
-# ------------------------------------------------------------
-# ------------------------------------------------------------
 
 # --------------------Define Callbacks------------------------
 
@@ -504,7 +581,22 @@ def save_skeleton(n_clicks):
     if n_clicks == 0:
         return
     global num_frames
-    for frame_i in tqdm(range(345, 2635)):
+    global ind_start
+    global ind_end
+    global downsampling
+    
+    xe = 0
+    ye = -1
+    ze = -2
+    total_rot = 2 * np.pi
+    # keep every n frames
+    rotations = np.arange(
+        start=0, stop=total_rot, step=total_rot / (ind_end - ind_start) * downsampling
+    )
+
+    for frame_i in tqdm(range(ind_start, ind_end)):
+        if frame_i % downsampling != 0:
+            continue
         plot_dir = Path("./3D_plots")
         plot_dir.mkdir(exist_ok=True, parents=True)
         slice_3d = get_points_at_frame(POINTS_3D, i=frame_i)
@@ -517,6 +609,7 @@ def save_skeleton(n_clicks):
                 point_size=0,
                 skeleton_bp=None,
                 skeleton_lines=None,
+                point_colors=color_list,
             )
         else:
             skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
@@ -527,16 +620,17 @@ def save_skeleton(n_clicks):
                 skeleton_bp=skeleton_bp,
                 skeleton_lines=skeleton_lines,
                 font_size=10,
+                point_colors=color_list,
             )
 
-        xe = 0
-        ye = -1
-        ze = -2
         scene_camera = dict(
             up=dict(x=0, y=-1, z=0),
             # center=dict(x=0, y=0.1, z=0),
             eye=dict(x=xe, y=ye, z=ze),
         )
+        cam_rot = R.from_rotvec([0, rotations[1], 0]).as_matrix()
+        new_cam = np.matmul(cam_rot, np.asarray([xe, ye, ze]))
+        xe, ye, ze = new_cam
 
         skel_fig_layout = deepcopy(fig)
 
@@ -592,11 +686,18 @@ def save_reproj(n_clicks):
     if n_clicks == 0:
         return
     global num_frames
-    points_2d_reproj = reproject_points(POINTS_3D, cam_group, info_dict)
-    points_2d_og = refill_arr(pts_array_2d, info_dict)
+    global ind_start
+    global ind_end
+    global downsampling
 
-    for frame_i in tqdm(range(num_frames - 1)):
-        plot_dir = Path("./Reprojections")
+    points_2d_reproj = reproject_points(POINTS_3D, cam_group)
+    points_2d_og = pts_2d_joints
+    # points_2d_og = pts_2d_joints
+
+    for frame_i in tqdm(range(ind_start, ind_end)):
+        if frame_i % downsampling != 0:
+            continue
+        plot_dir = Path("./reprojections")
         plot_dir.mkdir(exist_ok=True, parents=True)
 
         reproj_images = get_reproject_images(
@@ -695,6 +796,7 @@ def update_fig(
     global div_images
 
     global POINTS_3D
+    global color_list
 
     cam_to_edit = cam_group.cameras[int(cam_val) - 1]
     curr_tvec = cam_to_edit.get_translation()
@@ -745,69 +847,32 @@ def update_fig(
 
     # This means we must triangualte
     if n_clicks_triangulate != N_CLICKS_TRIANGULATE:
-        f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
+        # f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
+        points_3d_init = cam_group.triangulate_optim(pts_2d_joints)
+        points_3d_init = np.reshape(
+            points_3d_init,
+            (
+                points_3d_init.shape[0] * points_3d_init.shape[1],
+                points_3d_init.shape[2],
+            ),
+        )
+
         POINTS_3D = points_3d_init
-
-        points_2d_reproj = reproject_points(points_3d_init, cam_group, info_dict)
-        points_2d_og = refill_arr(pts_array_2d, info_dict)
-
-        reproj_paths = get_reproject_images(
-            points_2d_reproj, points_2d_og, path_images, i=frame_i
-        )
-
-        div_images = make_div_images(reproj_paths, is_path=False)
-
-        new_fig = plot_cams_and_points(
-            cam_group=cam_group,
-            points_3d=points_3d_init,
-        )
         N_CLICKS_TRIANGULATE = n_clicks_triangulate
+        new_fig, skel_fig, div_images = plot_points(points_3d_init, frame_i)
 
-        slice_3d = get_points_at_frame(POINTS_3D, frame_i)
-        skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
-
-        skel_fig = plot_cams_and_points(
-            cam_group=None,
-            points_3d=slice_3d,
-            point_size=5,
-            title=f"3D Points at frame {frame_i}",
-            skeleton_bp=skeleton_bp,
-            skeleton_lines=skeleton_lines,
-        )
     # This means we must bundle adjust
     elif n_clicks_bundle != N_CLICKS_BUNDLE:
-
         cam_group_reset = deepcopy(cam_group)
+        res, points_3d_init = cam_group.bundle_adjust(pts_2d_filtered)
 
-        res, points_3d_init = cam_group.bundle_adjust(pts_array_2d)
+        # Triangulate after to reproject
+        f0, points_3d_init = cam_group.get_initial_error(pts_2d)
         POINTS_3D = points_3d_init
 
-        points_2d_reproj = reproject_points(points_3d_init, cam_group, info_dict)
-        points_2d_og = refill_arr(pts_array_2d, info_dict)
-
-        reproj_paths = get_reproject_images(
-            points_2d_reproj, points_2d_og, path_images, i=frame_i
-        )
-
-        div_images = make_div_images(reproj_paths, is_path=False)
-
-        new_fig = plot_cams_and_points(
-            cam_group=cam_group,
-            points_3d=points_3d_init,
-        )
         N_CLICKS_BUNDLE = n_clicks_bundle
 
-        slice_3d = get_points_at_frame(POINTS_3D, frame_i)
-
-        skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
-
-        skel_fig = plot_cams_and_points(
-            cam_group=None,
-            points_3d=slice_3d,
-            point_size=5,
-            skeleton_bp=skeleton_bp,
-            skeleton_lines=skeleton_lines,
-        )
+        new_fig, skel_fig, div_images = plot_points(points_3d_init, frame_i)
 
     else:
         if (
@@ -816,31 +881,8 @@ def update_fig(
             and POINTS_3D is not None
             and not changed_extrinsics
         ):
-            points_2d_reproj = reproject_points(POINTS_3D, cam_group, info_dict)
-            points_2d_og = refill_arr(pts_array_2d, info_dict)
 
-            reproj_paths = get_reproject_images(
-                points_2d_reproj, points_2d_og, path_images, i=frame_i
-            )
-            div_images = make_div_images(reproj_paths, is_path=False)
-
-            new_fig = plot_cams_and_points(
-                cam_group=cam_group,
-                points_3d=POINTS_3D,
-            )
-
-            slice_3d = get_points_at_frame(POINTS_3D, frame_i)
-
-            skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
-
-            skel_fig = plot_cams_and_points(
-                cam_group=None,
-                points_3d=slice_3d,
-                point_size=5,
-                scene_aspect="cube",
-                skeleton_bp=skeleton_bp,
-                skeleton_lines=skeleton_lines,
-            )
+            new_fig, skel_fig, div_images = plot_points(POINTS_3D, frame_i)
 
         else:
             div_images = make_div_images([i[frame_i] for i in path_images])
@@ -908,6 +950,34 @@ def update_fig(
 
 # ------------------------------------------------------------
 # ------------------------------------------------------------
+
+
+def plot_points(points_3d, frame_i):
+    global cam_group
+    new_fig = plot_cams_and_points(
+        cam_group=cam_group,
+        points_3d=POINTS_3D,
+    )
+    slice_3d = get_points_at_frame(POINTS_3D, frame_i)
+    skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
+
+    skel_fig = plot_cams_and_points(
+        cam_group=None,
+        points_3d=slice_3d,
+        point_size=5,
+        scene_aspect="cube",
+        skeleton_bp=skeleton_bp,
+        skeleton_lines=skeleton_lines,
+        point_colors=color_list,
+    )
+    points_2d_reproj = reproject_points(POINTS_3D, cam_group)
+    points_2d_og = pts_2d_joints
+
+    reproj_paths = get_reproject_images(
+        points_2d_reproj, points_2d_og, path_images, i=frame_i
+    )
+    div_images = make_div_images(reproj_paths, is_path=False)
+    return new_fig, skel_fig, div_images
 
 
 if __name__ == "__main__":

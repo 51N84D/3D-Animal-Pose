@@ -366,7 +366,9 @@ def vector_plot(
     # fig.show()
 
 
-def draw_circles(img, points, point_colors=None, point_size=10):
+def draw_circles(img, points, point_colors=None, point_size=10, nonfilled_indices=[]):
+    if len(nonfilled_indices) > 0:
+        assert len(nonfilled_indices) == points.shape[0]
 
     if point_colors is not None:
         if not isinstance(point_colors, list):
@@ -374,13 +376,27 @@ def draw_circles(img, points, point_colors=None, point_size=10):
         assert len(point_colors) == points.shape[0]
 
     for i, point in enumerate(points):
+        if len(nonfilled_indices) > 0:
+            if nonfilled_indices[i]:
+                thickness = 2
+            else:
+                thickness = -1
+        else:
+            thickness = -1
+
         if point_colors is not None:
             color = [i * 255 for i in colors.to_rgb(point_colors[i])]
             cv2.circle(
-                img, (point[0], point[1]), point_size, (color[2], color[1], color[0]), -1
+                img,
+                (point[0], point[1]),
+                point_size,
+                (color[2], color[1], color[0]),
+                thickness,
             )
         else:
-            cv2.circle(img, (point[0], point[1]), point_size, (255, 255, 255), -1)
+            cv2.circle(
+                img, (point[0], point[1]), point_size, (255, 255, 255), thickness
+            )
     return img
 
 
@@ -460,7 +476,7 @@ def plot_cams_and_points(
     point_colors=None,
     legend=False,
     font_size=15,
-    plot_names=False
+    plot_names=False,
 ):
     """
     Plots the coordinate systems of the cameras along with the 3D points
@@ -494,7 +510,7 @@ def plot_cams_and_points(
             from_bp = line[0]
             to_bp = line[1]
 
-            #Standard case
+            # Standard case
             if isinstance(from_bp, str):
                 vec = [
                     skeleton_bp[from_bp][i] - skeleton_bp[to_bp][i] for i in range(3)
@@ -504,7 +520,7 @@ def plot_cams_and_points(
                     color = [line_colors[i]]
                 else:
                     color = ["red"]
-                
+
                 cam_name = to_bp if plot_names else ""
                 # names = [from_bp]
                 names = [""]
@@ -518,7 +534,7 @@ def plot_cams_and_points(
                 )
                 data += vec_data
 
-            #Want to draw to midpoint
+            # Want to draw to midpoint
             elif isinstance(from_bp, tuple):
                 # calculate midpoint
                 vec_from_from = [
@@ -594,12 +610,12 @@ def fig2data(fig):
     """
     # draw the renderer
     fig.canvas.draw()
- 
+
     # Get the RGBA buffer from the figure
     w, h = fig.canvas.get_width_height()
     buf = np.fromstring(fig.canvas.tostring_argb(), dtype=np.uint8)
     buf.shape = (w, h, 4)
- 
+
     # canvas.tostring_argb give pixmap in ARGB mode. Roll the ALPHA channel to have it in RGBA mode
     buf = np.roll(buf, 3, axis=2)
     return buf
