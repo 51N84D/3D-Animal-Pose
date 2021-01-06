@@ -8,16 +8,13 @@ import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
 import numpy as np
-from utils.utils_plotting import plot_cams_and_points, draw_circles, drawLine
+from utils.utils_plotting import plot_cams_and_points, draw_circles, drawLine, skew
 from utils.utils_IO import (
-    ordered_arr_3d_to_dict,
     combine_images,
 )
 import plotly.io as pio
 import plotly.graph_objs as go
 
-
-from preprocessing.preprocess_Sawtell_DLC import get_data
 from preprocessing.process_config import read_yaml
 
 import base64
@@ -25,6 +22,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 from pathlib import Path
 import json
@@ -33,37 +31,23 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 from tqdm import tqdm
 import argparse
-
-
-import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument("--dataset", default=None, help='str with name') 
-parser.add_argument("--dataset_path", default=None, help='str with folder path') 
-
-args, _ = parser.parse_known_args()
-
-if args.dataset == "Costa":
-	from preprocessing.preprocess_costa import get_data
-elif args.dataset == "Sawtell_fish":
-	from preprocessing.preprocess_Sawtell_DLC import get_data
-elif args.dataset == "IBL":
-	from preprocessing.preprocess_IBL import get_data
-else:
-	print("dataset is not supported")
-
-
 pio.renderers.default = None
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description="causal-gen")
+    parser = argparse.ArgumentParser(description="3d reconstruction")
 
     # dataset
     parser.add_argument("--config", type=str, default="./configs/sawtell.yaml")
     parser.add_argument("--start_index", type=int, default=0)
     parser.add_argument("--end_index", type=int)
     parser.add_argument("--downsampling", type=int, default=1)
-    parser.add_argument("--plot_epipolar", action='store_true')
+    parser.add_argument("--plot_epipolar", action="store_true")
+    parser.add_argument("--dataset", default=None, help="str with name")
+    parser.add_argument("--dataset_path", default=None, help="str with folder path")
+    parser.add_argument("--skip_frame", default=None, type=int, help="frame to skip")
+    parser.add_argument("--point_sizes", default=7, type=int, nargs='+', help="sizes of points in each view")
+    parser.add_argument("--equal_size", action='store_true', help="equalize reprojection images")
 
     return parser.parse_args()
 
@@ -93,12 +77,13 @@ def refill_arr(points_2d, info_dict):
         [x for x in all_point_indices if x not in clean_point_indices]
     )
     print(nan_point_indices)
-    
- 
+
     # If points_2d is (num_views, num_points, 2):
     if len(points_2d.shape) == 3:
         if len(nan_point_indices) == 0:
-            return points_2d.reshape(points_2d.shape[0], num_frames, -1, points_2d.shape[-1])
+            return points_2d.reshape(
+                points_2d.shape[0], num_frames, -1, points_2d.shape[-1]
+            )
 
         filled_points_2d = np.empty((points_2d.shape[0], num_points_all, 2))
         filled_points_2d[:, clean_point_indices, :] = points_2d
@@ -139,6 +124,44 @@ def get_F(pts_array_2d):
     return F
 
 
+def get_F_geometry():
+    global cam_group
+
+    # Get rotation vector
+    camera_1 = cam_group.cameras[0]
+    rot_vec_1 = R.from_rotvec(camera_1.get_rotation())
+    R1 = rot_vec_1.as_matrix()
+    t1 = camera_1.get_translation()
+    K1 = camera_1.get_camera_matrix()
+
+    F_all = []
+
+    for camera_2 in cam_group.cameras[1:]:
+        # Get rotation vector
+        rot_vec_2 = R.from_rotvec(camera_2.get_rotation())
+        R2 = rot_vec_2.as_matrix()
+        # Get translation vector
+        t2 = camera_2.get_translation()
+        K2 = camera_2.get_camera_matrix()
+
+        # --- Now compute relevant quantities for F estimation ------
+        # Camera matrix basics: http://www.cs.cmu.edu/~16385/s17/Slides/11.1_Camera_matrix.pdf
+        # Fundamental matrix computation: https://rb.gy/dd0nz2
+
+        # Compute projection matrices
+        P1 = np.matmul(K1, np.concatenate((R1, t1[:, np.newaxis]), axis=1))
+        P2 = np.matmul(K2, np.concatenate((R2, t2[:, np.newaxis]), axis=1))
+
+        # Get camera center (view 1)
+        R1_inv = np.linalg.inv(R1) 
+        C = np.matmul(-R1_inv, t1)
+        C = np.append(C, 1)
+
+        F = np.matmul(skew(np.matmul(P2, C)), np.matmul(P2, np.linalg.pinv(P1)))
+        F_all.append(F)
+    return F_all
+
+
 def reproject_points(points_3d, cam_group):
 
     multivew_filled_points_2d = []
@@ -157,7 +180,7 @@ def get_skeleton_parts(slice_3d):
     global config
 
     skeleton_bp = {}
-    
+
     for i in range(slice_3d.shape[0]):
         skeleton_bp[config.bp_names[i]] = tuple(slice_3d[i, :])
     skeleton_lines = config.skeleton
@@ -165,19 +188,22 @@ def get_skeleton_parts(slice_3d):
     return skeleton_bp, skeleton_lines
 
 
-def get_reproject_images(
-    points_2d_reproj, points_2d_og, path_images, i=0
-):
+def filter_zero_view_points(points_2d_og):
+    return np.all(np.any(np.isnan(points_2d_og), axis=-1), axis=0)
+
+
+def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
     global F
     global color_list
     global plot_epipolar
+    global point_sizes
 
-    # For each camera
     reproj_dir = Path("./reproject_images")
     reproj_dir.mkdir(exist_ok=True, parents=True)
-    print(points_2d_og.shape)
+    points_filter = filter_zero_view_points(points_2d_og)
 
     images = []
+    # For each camera
     for cam_num in range(len(path_images)):
         cam1_points_2d_og = points_2d_og[0, i, :, :]
 
@@ -193,21 +219,39 @@ def get_reproject_images(
         curr_points_2d_og = points_2d_og[cam_num, i, :, :]
         curr_points_2d_reproj = points_2d_reproj[cam_num, i, :, :]
 
+        curr_points_2d_reproj[points_filter[i, :]] = np.nan
+
         # Get indices of interpolated points
         nonfilled_indices = np.any(np.isnan(curr_points_2d_og), axis=-1)
+        points_nonfilled = np.empty_like(curr_points_2d_reproj)
+        points_nonfilled[:] = np.nan
+        points_filled = np.empty_like(curr_points_2d_reproj)
+        points_filled[:] = np.nan
+        num_nans = np.sum(nonfilled_indices)
 
-        draw_circles(img, curr_points_2d_og.astype(np.int32), "red", point_size=5)
-        
+        points_nonfilled[nonfilled_indices] = curr_points_2d_reproj[nonfilled_indices]
+        points_filled[~nonfilled_indices] = curr_points_2d_reproj[~nonfilled_indices]
+
+        draw_circles(img, curr_points_2d_og.astype(np.int32), color_list, point_size=point_sizes[cam_num])
+
         draw_circles(
             img,
-            curr_points_2d_reproj.astype(np.int32),
-            "blue",
-            point_size=5,
-            nonfilled_indices=nonfilled_indices,
+            points_filled.astype(np.int32),
+            color_list,
+            point_size=point_sizes[cam_num] * 4,
+            marker_type='cross'
+        )
+
+        draw_circles(
+            img,
+            points_nonfilled.astype(np.int32),
+            color_list,
+            point_size=point_sizes[cam_num],
+            thickness=2
         )
 
         # Draw epipolar lines
-        if cam_num != 0 and plot_epipolar:
+        if cam_num != 0 and plot_epipolar and num_nans > 0:
             cam1_points_2d_og = cam1_points_2d_og.astype(np.int32)
             cam1_points_2d_og = cam1_points_2d_og[
                 ~np.isnan(cam1_points_2d_og).any(axis=1)
@@ -218,6 +262,8 @@ def get_reproject_images(
             aug_F = np.tile(F[cam_num - 1], (points_homog.shape[0], 1, 1))
             lines = np.squeeze(np.matmul(aug_F, points_homog[:, :, np.newaxis]))
             for j, line_vec in enumerate(lines):
+                if not nonfilled_indices[j]:
+                    continue
                 # Get x and y intercepts (on image) to plot
                 # y = 0: x = -c/a
                 x_intercept = int(-line_vec[2] / line_vec[0])
@@ -269,7 +315,7 @@ def make_div_images(images=[], is_path=True):
     return div_images
 
 
-def get_points_at_frame(points_3d, i=0):
+def get_points_at_frame(points_3d, i=0, filtered=True):
 
     """
     if filtered:
@@ -283,6 +329,9 @@ def get_points_at_frame(points_3d, i=0):
     # else:
     points_3d = points_3d.reshape(num_frames, num_bodyparts, 3)
     slice_3d = points_3d[i, :, :]
+    if filtered:
+        filter_indices = filter_zero_view_points(pts_2d_joints)
+        slice_3d[filter_indices[i]] = np.nan
 
     return slice_3d
 
@@ -377,15 +426,15 @@ def get_dropdown(num_cameras):
 # --------------Define global variables-------------------------
 
 print("---------------- READING YAML--------------------")
-
 args = get_args()
 
-experiment_data = read_yaml(args.config)
+experiment_data = read_yaml(args.config, args.skip_frame)
 
-config = experiment_data['config']
+config = experiment_data["config"]
 
 pts_2d_joints = experiment_data["points_2d_joints"]
-pts_2d_joints = experiment_data["points_2d_joints"]
+likelihoods = experiment_data["likelihoods"]
+
 pts_2d = pts_2d_joints.reshape(
     pts_2d_joints.shape[0],
     pts_2d_joints.shape[1] * pts_2d_joints.shape[2],
@@ -409,13 +458,13 @@ if ind_end is None:
     ind_end = num_frames
 downsampling = args.downsampling
 plot_epipolar = args.plot_epipolar
-
+point_sizes = args.point_sizes
+equal_size = args.equal_size
 print("------------------------------------------------")
 
 color_list = config.color_list
 
-# Get fundamental matrix
-F = get_F(pts_2d)
+
 
 
 div_images = make_div_images([i[0] for i in path_images])
@@ -429,6 +478,10 @@ fig = plot_cams_and_points(
     title="Camera Extrinsics",
     scene_aspect="data",
 )
+
+# Get fundamental matrix
+# F = get_F(pts_2d)
+F = get_F_geometry()
 
 N_CLICKS_TRIANGULATE = 0
 N_CLICKS_BUNDLE = 0
@@ -480,7 +533,7 @@ app.layout = html.Div(
                         min=0,
                         max=len(path_images[0]) - 1,
                         step=1,
-                        value=31,
+                        value=0,
                         vertical=True,
                     ),
                     style={
@@ -554,6 +607,11 @@ app.layout = html.Div(
             style={"float": "right"},
         ),
         html.Div(id="reproj-out", children="", style={"float": "right"}),
+        html.Div(
+            html.Button("Save traces", id="traces-button", n_clicks=0),
+            style={"float": "right"},
+        ),
+        html.Div(id="traces-out", children="", style={"float": "right"}),
         html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length[0]))),
         html.Div(id="focal-out"),
     ]
@@ -584,7 +642,7 @@ def save_skeleton(n_clicks):
     global ind_start
     global ind_end
     global downsampling
-    
+
     xe = 0
     ye = -1
     ze = -2
@@ -692,7 +750,6 @@ def save_reproj(n_clicks):
 
     points_2d_reproj = reproject_points(POINTS_3D, cam_group)
     points_2d_og = pts_2d_joints
-    # points_2d_og = pts_2d_joints
 
     for frame_i in tqdm(range(ind_start, ind_end)):
         if frame_i % downsampling != 0:
@@ -703,11 +760,72 @@ def save_reproj(n_clicks):
         reproj_images = get_reproject_images(
             points_2d_reproj, points_2d_og, path_images, i=frame_i
         )
-        combined_proj = combine_images(reproj_images)
+        combined_proj = combine_images(reproj_images, equal_size=equal_size)
         cv2.imwrite(str(plot_dir / f"reproj_{frame_i}.jpg"), combined_proj)
 
     return ""
 
+
+@app.callback(
+    Output("traces-out", "children"),
+    [Input("traces-button", "n_clicks")],
+)
+def save_traces(n_clicks):
+    if POINTS_3D is None:
+        return None
+    points_2d_reproj = reproject_points(POINTS_3D, cam_group)
+    points_2d_og = pts_2d_joints
+
+    # Shape is (num_views, num_frames, num_bodyparts, 2)
+    # For each view, plot x vs. t
+
+    figsize = (40, 20)
+
+    tPlot, axes = plt.subplots(nrows=num_cameras, ncols=num_bodyparts, sharex=False, sharey=False, figsize=figsize)
+
+    tPlot.suptitle('Traces', fontsize=20)
+
+    plot_dir = Path("./traces")
+    plot_dir.mkdir(exist_ok=True, parents=True)
+    count = 0
+    for view in range(points_2d_og.shape[0]):
+        for bp in range(points_2d_og.shape[2]):
+            color = color_list[bp]
+            axes[view, bp].plot(points_2d_reproj[view, :, bp, 0], color='blue', label='reprojection')
+            axes[view, bp].plot(points_2d_og[view, :, bp, 0], color='red', label='DLC/DGP output')
+            axes[view, bp].plot((0, 0), label='bodypart color', color=color)
+            axes[view, bp].set_ylabel('x')
+            axes[view, bp].set_xlabel('frame')
+            leg = axes[view, bp].legend()
+            for line in leg.get_lines():
+                line.set_linewidth(6.0)
+            axes[view, bp].title.set_text(f'view {view + 1}, {config.bp_names[bp]}')
+            count += 1
+
+    tPlot.savefig(str(plot_dir / "point_traces.png"))
+
+    # Now repeat for likelihoods
+    if np.sum(~np.isnan(likelihoods)) > 0:
+        tPlot, axes = plt.subplots(nrows=num_cameras, ncols=num_bodyparts, sharex=False, sharey=False, figsize=figsize)
+
+        tPlot.suptitle('Confidences', fontsize=20)
+
+        count = 0
+        for view in range(likelihoods.shape[0]):
+            for bp in range(likelihoods.shape[2]):
+                color = color_list[bp]
+                axes[view, bp].plot(likelihoods[view, :, bp], color='blue')
+                axes[view, bp].plot((0, 0), label='bodypart color', color=color)
+                axes[view, bp].set_ylabel('likelihood')
+                axes[view, bp].set_xlabel('frame')
+                leg = axes[view, bp].legend()
+                for line in leg.get_lines():
+                    line.set_linewidth(6.0)
+                axes[view, bp].title.set_text(f'view {view + 1}, {config.bp_names[bp]}')
+                count += 1
+
+        tPlot.savefig(str(plot_dir / "point_confidences.png"))
+        # cv2.imwrite(str(plot_dir / f"reproj_{frame_i}.jpg"), combined_proj)
 
 '''
 @app.callback(
@@ -797,6 +915,7 @@ def update_fig(
 
     global POINTS_3D
     global color_list
+    global F
 
     cam_to_edit = cam_group.cameras[int(cam_val) - 1]
     curr_tvec = cam_to_edit.get_translation()
@@ -848,7 +967,7 @@ def update_fig(
     # This means we must triangualte
     if n_clicks_triangulate != N_CLICKS_TRIANGULATE:
         # f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
-        points_3d_init = cam_group.triangulate_optim(pts_2d_joints)
+        points_3d_init = cam_group.triangulate_progressive(pts_2d_joints)
         points_3d_init = np.reshape(
             points_3d_init,
             (
@@ -864,11 +983,26 @@ def update_fig(
     # This means we must bundle adjust
     elif n_clicks_bundle != N_CLICKS_BUNDLE:
         cam_group_reset = deepcopy(cam_group)
+
+        print("BEFORE")
+        for i, cam in enumerate(cam_group.cameras):
+            print(
+                f"cam {i}: focal length {cam.get_focal_length()}, distortion {cam.get_distortions()}"
+            )
+
         res, points_3d_init = cam_group.bundle_adjust(pts_2d_filtered)
+
+        F = get_F_geometry()
 
         # Triangulate after to reproject
         f0, points_3d_init = cam_group.get_initial_error(pts_2d)
         POINTS_3D = points_3d_init
+
+        print("AFTER")
+        for i, cam in enumerate(cam_group.cameras):
+            print(
+                f"cam {i}: focal length {cam.get_focal_length()}, distortion {cam.get_distortions()}"
+            )
 
         N_CLICKS_BUNDLE = n_clicks_bundle
 

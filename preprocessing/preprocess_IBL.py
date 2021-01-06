@@ -1,8 +1,13 @@
 from __future__ import print_function
 import os
 import numpy as np
-from pathlib import Path
 import re
+from ibl_utils import get_markers
+import cv2
+from pathlib import Path
+from copy import deepcopy
+import argparse
+from tqdm import tqdm
 
 
 def sorted_nicely(l):
@@ -18,113 +23,280 @@ def find_nearest(array, value):
     return idx
 
 
-def get_data(eid="cb2ad999-a6cb-42ff-bf71-1774c57e5308", trial_range=[5, 7]):
-    res_folder = (
-        "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_example/%s_trials_%s_%s"
-        % (eid, trial_range[0], trial_range[1])
+def get_args():
+    parser = argparse.ArgumentParser(description="ibl preprocessing")
+
+    # dataset
+    parser.add_argument(
+        "--raw_data_dir",
+        type=str,
+        default="/Volumes/paninski-locker/data/ibl/raw_data/",
+    )
+    parser.add_argument(
+        "--save_points_path",
+        type=str,
+        default="/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/ibl.npy",
+    )
+    parser.add_argument(
+        "--save_lh_path",
+        type=str,
+        default="/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/ibl_lh.npy",
+    )
+    parser.add_argument(
+        "--save_frame_path",
+        type=str,
+        default="/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_full/images/",
+    )
+    parser.add_argument("--save_lh", action="store_true", help="save likelihoods")
+    parser.add_argument("--write_frames", action="store_true", help="write frames")
+    parser.add_argument(
+        "--occlusions",
+        action="store_true",
+        help="filter points to find occlusions",
+    )
+    parser.add_argument(
+        "--likelihood_thresh",
+        default=0.9,
+        type=float,
+        help="threshold for filtering points",
+    )
+    parser.add_argument("--start_frame", default=0, type=int, help="frame to start at")
+    parser.add_argument(
+        "--num_frames", default=1000, type=int, help="number of frames to consider"
+    )
+    parser.add_argument(
+        "--padding",
+        default=5,
+        type=int,
+        help="padding for before and after occluded frames",
     )
 
-    XYs_left = np.load(res_folder + "/XYs_left.npy", allow_pickle=True).flatten()[0]
-    XYs_right = np.load(res_folder + "/XYs_right.npy", allow_pickle=True).flatten()[0]
+    return parser.parse_args()
 
-    times_left = np.load(res_folder + "/times_left.npy")
-    times_right = np.load(res_folder + "/times_right.npy")
 
-    # get closest stamps or right cam (150 Hz) for each stamp of left (60 Hz)
-    idx_aligned = []
-    for t in times_left:
-        idx_aligned.append(find_nearest(times_right, t))
+def select_occluded_frames(likelihoods, threshold=0.9, padding=5):
+    lh_low = likelihoods < threshold
+    lh_low = np.any(lh_low[:, :, 1:], axis=-1)
+    lh_low = np.any(lh_low, axis=0)
 
-    # paw_l in video left = paw_r in video right
-    # Divide left coordinates by 2 to get them in half resolution like right cam;
-    # reduce temporal resolution of right cam to that of left cam
-    num_analyzed_body_parts = 3  # both paws and nose
+    occluded_indices = np.where(lh_low)[0]
+    padded_indices = []
+    occluded_dict = {}
+    # Now fill using padding
+    for i in tqdm(range(likelihoods.shape[1])):
+        for j in range(padding):
+            if (
+                i + j in occluded_indices or i - j in occluded_indices
+            ) and i not in occluded_dict:
+                padded_indices.append(i)
+                occluded_dict[i] = 0
 
-    cam_right_paw1 = np.array(
-        [XYs_right["paw_r"][0][idx_aligned], XYs_right["paw_r"][1][idx_aligned]]
+    return padded_indices, occluded_dict
+
+
+def get_data():
+    args = get_args()
+    raw_data_dir = Path(args.raw_data_dir)
+    save_frame_path = Path(args.save_frame_path)
+    save_points_path = Path(args.save_points_path)
+    save_lh_path = Path(args.save_lh_path)
+    num_frames = args.num_frames
+    start_frame = args.start_frame
+
+    likelihood_thresh = args.likelihood_thresh
+
+    save_frame_path.mkdir(exist_ok=True, parents=True)
+
+    camera = "front"
+    # 'right': 150 Hz (640 x 512)
+    # 'left': 60 Hz (1280 x 1024)
+    # 'body': 30 Hz (640 x 512)
+
+    lab = "cortexlab"
+    animal = "KS023"
+    date = "2019-12-10"
+    number = "001"
+
+    # raw data from flatiron
+    session_path = raw_data_dir / lab / "Subjects" / animal / date / number
+    alf_path = session_path / "alf"
+    video_path = session_path / "raw_video_data"
+
+    if camera == "all":
+        views = ["right", "left", "body"]
+    elif camera == "front":
+        views = ["right", "left"]
+    else:
+        views = [camera]
+
+    mp4_files = {view: video_path / f"_iblrig_{view}Camera.raw.mp4" for view in views}
+
+    timestamps = {}
+    for view in views:
+        timestamps[view] = np.load(alf_path / f"_ibl_{view}Camera.times.npy")
+        print(
+            "average %s camera framerate: %f Hz"
+            % (view, 1.0 / np.mean(np.diff(timestamps[view])))
+        )
+
+    markers = {}
+    masks = {}
+    likelihoods = {}
+    print("Getting markers...")
+    for view in views:
+        markers[view], masks[view], likelihoods[view] = get_markers(
+            alf_path, view, likelihood_thresh=likelihood_thresh
+        )
+        # chop off timestamps that don't have markers
+        timestamps[view] = timestamps[view][: markers[view]["nose_tip"].shape[0]]
+    # get closest stamps on right cam (150 Hz) for each stamp of left (60 Hz)
+    from scipy.interpolate import interp1d
+
+    interpolater = interp1d(
+        timestamps["right"],
+        np.arange(len(timestamps["right"])),
+        kind="nearest",
+        fill_value="extrapolate",
     )
-    cam_left_paw1 = np.array([XYs_left["paw_l"][0] / 2, XYs_left["paw_l"][1] / 2])
+    idx_aligned = np.round(interpolater(timestamps["left"])).astype(np.int)
 
-    cam_right_paw2 = np.array(
-        [XYs_right["paw_l"][0][idx_aligned], XYs_right["paw_l"][1][idx_aligned]]
-    )
-    cam_left_paw2 = np.array([XYs_left["paw_r"][0] / 2, XYs_left["paw_r"][1] / 2])
+    # ------------------------------------------------------------
+    # Read and write numpy array
+    print("Making array...")
+    multiview_arr = []
+    likelihoods_arr = []
+    for view in views:
+        multiview_arr.append([])
+        likelihoods_arr.append([])
 
-    cam_right_nose = np.array(
-        [XYs_right["nose_tip"][0][idx_aligned], XYs_right["nose_tip"][1][idx_aligned]]
-    )
-    cam_left_nose = np.array([XYs_left["nose_tip"][0] / 2, XYs_left["nose_tip"][1] / 2])
+    bodyparts = markers[views[0]].keys()
+    bp_to_keep = ["nose_tip", "paw_l", "paw_r"]
 
-    # the format shall be such that points are concatenated, p1,p2,p3,p1,p2,p3, ...
-    cam1 = np.zeros((len(idx_aligned) * num_analyzed_body_parts, 2))
-    cam1[0::3] = cam_right_paw1.T
-    cam1[1::3] = cam_right_paw2.T
-    cam1[2::3] = cam_right_nose.T
+    # Swap left and right paw in one view for consistency
+    paw_r = deepcopy(markers["right"]["paw_r"])
+    markers["right"]["paw_r"] = markers["right"]["paw_l"]
+    markers["right"]["paw_l"] = paw_r
 
-    cam2 = np.zeros((len(idx_aligned) * num_analyzed_body_parts, 2))
-    cam2[0::3] = cam_left_paw1.T
-    cam2[1::3] = cam_left_paw2.T
-    cam2[2::3] = cam_left_nose.T
+    paw_r_lh = deepcopy(likelihoods["right"]["paw_r"])
+    likelihoods["right"]["paw_r"] = likelihoods["right"]["paw_l"]
+    likelihoods["right"]["paw_l"] = paw_r_lh
 
-    pts_array_2d_with_nans = np.array([cam1, cam2])
+    for bp in bodyparts:
+        if bp not in bp_to_keep:
+            continue
+        for i, view in enumerate(views):
+            if view == "left":
+                multiview_arr[i].append(
+                    markers[view][bp][start_frame : start_frame + num_frames, :]
+                )
+                likelihoods_arr[i].append(
+                    likelihoods[view][bp][start_frame : start_frame + num_frames]
+                )
 
+            elif view == "right":
+                multiview_arr[i].append(
+                    markers[view][bp][idx_aligned][
+                        start_frame : start_frame + num_frames, :
+                    ]
+                )
+                likelihoods_arr[i].append(
+                    likelihoods[view][bp][idx_aligned][
+                        start_frame : start_frame + num_frames
+                    ]
+                )
+    multiview_arr = np.array(multiview_arr)
+    multiview_arr = multiview_arr.transpose((0, 2, 1, 3))
 
-    num_cameras, num_points_all, _ = pts_array_2d_with_nans.shape
+    likelihoods_arr = np.array(likelihoods_arr)
+    likelihoods_arr = likelihoods_arr.transpose((0, 2, 1))
+    # ------------------------------------------------------------
 
-    pts_array_2d_joints = pts_array_2d_with_nans.reshape(
-        num_cameras, len(times_left), num_analyzed_body_parts, 2
-    )
+    # Select occluded frames
+    if args.occlusions:
+        occluded_indices, keep_dict = select_occluded_frames(
+            likelihoods_arr, threshold=likelihood_thresh, padding=args.padding
+        )
+    else:
+        occluded_indices = np.arange(multiview_arr.shape[1])
+        keep_dict = dict((e, i) for (i, e) in enumerate(occluded_indices))
 
-    np.save('/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/ibl.npy', pts_array_2d_joints)
+    multiview_arr = multiview_arr[:, occluded_indices, :, :]
+    likelihoods_arr = likelihoods_arr[:, occluded_indices, :]
 
-    # remove nans (any of the x_r,y_r, x_l, y_l) and keep clean_point_indices
-    non_nan_idc = ~np.isnan(pts_array_2d_with_nans).any(axis=2).any(axis=0)
+    print("multiview_arr: ", multiview_arr.shape)
+    print(len(occluded_indices))
+    print(len(keep_dict.keys()))
+    # Read and write video frames
+    if args.write_frames:
+        print("Writing frames...")
+        # ------------------------------------------------------------
+        for view in views:
+            frame_path = save_frame_path / view
+            frame_path.mkdir(exist_ok=True, parents=True)
 
-    info_dict = {}
-    info_dict["num_frames"] = len(times_left)
-    info_dict["num_cameras"] = num_cameras
-    info_dict["num_analyzed_body_parts"] = num_analyzed_body_parts
-    info_dict["num_points_all"] = num_points_all
-    info_dict["clean_point_indices"] = np.arange(num_points_all)[non_nan_idc]
+            # Extract frames at specific timesteps
+            vidcap = cv2.VideoCapture(str(mp4_files[view]))
+            count = 0
+            local_count = 0
+            tracker_count = 0
 
-    pts_array_2d = pts_array_2d_with_nans[:, info_dict["clean_point_indices"]]
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            while True:
+                success, image = vidcap.read()
+                if success:
+                    height, width = image.shape[:2]
 
-    IMG_WIDTH_1 = IMG_WIDTH_2 = 640
-    IMG_HEIGHT_1 = IMG_HEIGHT_2 = 512
+                    # Handle right view
+                    if view == "right":
+                        cv2.putText(
+                            image,
+                            str(timestamps[view][count]),
+                            (width - 300, height - 100),
+                            font,
+                            1,
+                            (255, 255, 255),
+                            2,
+                            cv2.LINE_AA,
+                        )
 
-    left_path = Path(
-        f"/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_example/{eid}_trials_{trial_range[0]}_{trial_range[1]}/images/imgs_left"
-    )
-    right_path = Path(
-        f"/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_example/{eid}_trials_{trial_range[0]}_{trial_range[1]}/images/imgs_right"
-    )
-    left_frames = sorted_nicely(os.listdir(left_path))
-    left_frames.append(left_frames[-1])
-    left_frames = [left_path / i for i in left_frames]
-    right_frames = sorted_nicely(os.listdir(right_path))
-    right_frames.append(right_frames[-1])
-    right_frames = [right_path / i for i in right_frames]
+                        if count in idx_aligned:
+                            if tracker_count in keep_dict:
+                                cv2.imwrite(
+                                    str(frame_path / f"{local_count}.png"), image
+                                )
+                                local_count += 1
+                            tracker_count += 1
 
-    path_images = [left_frames, right_frames]
+                    # Handle left view
+                    else:
+                        cv2.putText(
+                            image,
+                            str(timestamps[view][count]),
+                            (width - 400, height - 100),
+                            font,
+                            2,
+                            (255, 255, 255),
+                            2,
+                            cv2.LINE_AA,
+                        )
 
-    focal_length_mm = 16
-    sensor_size = 12.7
+                        if count in keep_dict:
+                            cv2.imwrite(str(frame_path / f"{local_count}.png"), image)
+                            local_count += 1
 
-    focal_length = focal_length_mm * IMG_WIDTH_1 / sensor_size
+                        tracker_count += 1
 
-    return {
-        "img_width": [IMG_WIDTH_1, IMG_WIDTH_2],
-        "img_height": [IMG_HEIGHT_1, IMG_HEIGHT_2],
-        "pts_array_2d": pts_array_2d,
-        "info_dict": info_dict,
-        "path_images": path_images,
-        "focal_length": [focal_length] * info_dict["num_cameras"],
-    }
+                    count += 1
+
+                if tracker_count >= num_frames or not success:
+                    break
+        # ------------------------------------------------------------
+
+    np.save(save_points_path, multiview_arr)
+
+    if args.save_lh:
+        np.save(save_lh_path, likelihoods_arr)
 
 
 if __name__ == "__main__":
-    #eid = "cb2ad999-a6cb-42ff-bf71-1774c57e5308"
-    eid = 'e5fae088-ed96-4d9b-82f9-dfd13c259d52'
-    #trial_range = [5, 7]
-    trial_range = [10,13]
-    get_data(eid, trial_range)
+    get_data()
