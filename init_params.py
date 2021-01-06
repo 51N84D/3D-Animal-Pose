@@ -459,6 +459,8 @@ if ind_end is None:
 downsampling = args.downsampling
 plot_epipolar = args.plot_epipolar
 point_sizes = args.point_sizes
+if isinstance(point_sizes, int):
+    point_sizes = [point_sizes] * num_cameras
 equal_size = args.equal_size
 print("------------------------------------------------")
 
@@ -984,25 +986,12 @@ def update_fig(
     elif n_clicks_bundle != N_CLICKS_BUNDLE:
         cam_group_reset = deepcopy(cam_group)
 
-        print("BEFORE")
-        for i, cam in enumerate(cam_group.cameras):
-            print(
-                f"cam {i}: focal length {cam.get_focal_length()}, distortion {cam.get_distortions()}"
-            )
-
         res, points_3d_init = cam_group.bundle_adjust(pts_2d_filtered)
-
         F = get_F_geometry()
 
         # Triangulate after to reproject
         f0, points_3d_init = cam_group.get_initial_error(pts_2d)
         POINTS_3D = points_3d_init
-
-        print("AFTER")
-        for i, cam in enumerate(cam_group.cameras):
-            print(
-                f"cam {i}: focal length {cam.get_focal_length()}, distortion {cam.get_distortions()}"
-            )
 
         N_CLICKS_BUNDLE = n_clicks_bundle
 
@@ -1081,8 +1070,6 @@ def update_fig(
         div_images,
     )
 
-
-# ------------------------------------------------------------
 # ------------------------------------------------------------
 
 

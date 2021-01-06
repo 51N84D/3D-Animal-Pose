@@ -76,7 +76,7 @@ def read_yaml(path_to_yaml, frame_to_skip=None):
         view_frames = [view_path / i for i in view_frames]
         if num_frames != len(view_frames):
             if num_frames - 1 == len(view_frames):
-
+                
                 assert frame_to_skip is not None, """Mismatch between number of frames in points and number of frames;  
                 specify which frame to skip (e.g --skip_frame -1 or --skip_frame 0)"""
                 

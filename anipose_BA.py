@@ -977,8 +977,6 @@ class CameraGroup:
         constraints = [[0, 1], [1, 2], [2, 3]]
         (meaning that lengths of segments 0->1, 1->2, 2->3 are all constant)
         """
-        print('---------TRIANGULATE PROGRESSIVE------------------')
-        print('points: ', points.shape)
         assert points.shape[0] == len(self.cameras), (
             "Invalid points shape, first dim should be equal to"
             " number of cameras ({}), but shape is {}".format(
@@ -991,7 +989,6 @@ class CameraGroup:
         # constraints_weak = np.array(constraints_weak)
 
         points_shaped = points.reshape(n_cams, n_frames * n_joints, 2)
-        print('points_shaped: ', points_shaped.shape)
 
         if init_ransac:
             p3ds, picked, p2ds, errors = self.triangulate_ransac(
@@ -1001,16 +998,12 @@ class CameraGroup:
         else:
             p3ds = self.triangulate(points_shaped, progress=init_progress)
         p3ds = p3ds.reshape((n_frames, n_joints, 3))
-        print('p3ds: ', p3ds.shape)
 
         c = np.isfinite(p3ds[:, :, 0])
-        print('c: ', c.shape)
-        print("c sum: ", np.sum(c))
         if np.sum(c) < 20:
             print("warning: not enough 3D points to run optimization")
             return p3ds
 
-        print('-----------------------------------------------')
         return self.optim_points_progressive(points, p3ds, **kwargs)
         #return self.optim_points(points, p3ds, **kwargs)
 
@@ -1042,7 +1035,6 @@ class CameraGroup:
         constraints = [[0, 1], [1, 2], [2, 3]]
         (meaning that lengths of segments 0->1, 1->2, 2->3 are all constant)
         """
-        print("****************OPTIM POINTS PROGRESSIVE****************")
         assert points.shape[0] == len(self.cameras), (
             "Invalid points shape, first dim should be equal to"
             " number of cameras ({}), but shape is {}".format(
@@ -1056,17 +1048,13 @@ class CameraGroup:
         no_nan_counts = n_cams - nan_counts
         fixed_indices = no_nan_counts >= 2
 
-        print('p3ds: ', p3ds.shape)
-        print('fixed_indices: ', fixed_indices.shape)
 
         constraints = np.array(constraints)
         constraints_weak = np.array(constraints_weak)
 
         p3ds_intp = np.apply_along_axis(interpolate_data, 0, p3ds)
-        print('p3ds_intp: ', p3ds_intp.shape)
 
         p3ds_med = np.apply_along_axis(medfilt_data, 0, p3ds_intp, size=7)
-        print('p3ds_med: ', p3ds_med.shape)
 
         default_smooth = 1.0 / np.mean(np.abs(np.diff(p3ds_med, axis=0)))
         scale_smooth_full = scale_smooth * default_smooth
@@ -1084,8 +1072,6 @@ class CameraGroup:
         jac = self._jac_sparsity_progressive(
             points, n_deriv_smooth
         )
-
-        print('jac: ', jac.shape)
 
         opt2 = optimize.least_squares(
             self._error_fun_progressive,
@@ -1108,9 +1094,6 @@ class CameraGroup:
 
         p3ds_filler = opt2.x
 
-        print('p3ds: ', p3ds.shape)
-        print('p3ds[~fixed_indices]: ', p3ds[~fixed_indices].shape)
-
         p3ds[~fixed_indices] = p3ds_filler.reshape(p3ds[~fixed_indices].shape)
 
         t2 = time.time()
@@ -1118,7 +1101,6 @@ class CameraGroup:
         if verbose:
             print("optimization took {:.2f} seconds".format(t2 - t1))
 
-        print('*********************************')
         return p3ds
 
     def _error_fun_progressive(
@@ -1174,7 +1156,6 @@ class CameraGroup:
         filled_points[~fixed_indices] = p3ds_filler.reshape(filled_points[~fixed_indices].shape)
         errors_smooth = np.diff(filled_points, n=n_deriv_smooth, axis=0).ravel() * scale_smooth
 
-        print('errors_smooth: ', np.mean(errors_smooth))
         # errors_smooth *= 0
 
         return np.hstack(
@@ -1184,53 +1165,38 @@ class CameraGroup:
     def _jac_sparsity_progressive(
         self, p2ds, n_deriv_smooth=1,
     ):
-        print('**************JAC SPARSITY TRIANGULATION*************')
         n_cams, n_frames, n_joints, _ = p2ds.shape
-        print('p2ds: ', p2ds.shape)
 
         p2ds_flat = p2ds.reshape((n_cams, -1, 2))
-        print('p2ds_flat: ', p2ds_flat.shape)
         point_indices = np.zeros(p2ds_flat.shape, dtype="int32")
-        print('point_indices: ', point_indices.shape)
         for i in range(p2ds_flat.shape[1]):
             point_indices[:, i] = i
 
         point_indices_3d = np.arange(n_frames * n_joints).reshape((n_frames, n_joints))
-        print('point_indices_3d: ', point_indices_3d.shape)
 
         nan_counts = np.sum(np.any(np.isnan(p2ds), axis=-1), axis=0)
         no_nan_counts = n_cams - nan_counts
         fixed_indices = no_nan_counts >= 2
         fixed_indices_flattened = np.ravel(fixed_indices)
-        print('fixed_indices_flattened: ', fixed_indices_flattened)
-        print('fixed_indices_flattened shape: ', fixed_indices_flattened.shape)
 
         good = np.full(p2ds_flat.shape, False, dtype=bool)
         good[:, ~fixed_indices_flattened, :] = True
-        print('good: ', good.shape)
         
         n_errors_reproj = np.sum(good)
         n_errors_smooth = (n_frames - n_deriv_smooth) * n_joints * 3
 
-        print('n_errors_reproj: ', n_errors_reproj)
-        print('n_errors_smooth: ', n_errors_smooth)
-
         n_errors = (
             n_errors_reproj + n_errors_smooth
         )
-        print('n_errors: ', n_errors)
         n_3d = n_frames * n_joints * 3
         n_params = n_3d
         n_params = np.sum(~fixed_indices) * 3
-        print('n_params: ', n_params)
 
         #n_errors = n_errors_reproj  #! forcing
 
         A_sparse = dok_matrix((n_errors, n_params), dtype="int16")
-        print('A_sparse: ', A_sparse.shape)
         # constraints for reprojection errors
         ix_reproj = np.arange(n_errors_reproj)
-        print('ix_reproj: ', ix_reproj.shape)
         # For each (x,y,z) in 3D point
         assert int(n_errors_reproj / n_cams / 2) - n_errors_reproj / n_cams / 2 == 0
         for i in range(int(n_errors_reproj / n_cams / 2)):
@@ -1243,13 +1209,6 @@ class CameraGroup:
 
         # sparse constraints for smoothness in time
         temporal_rows = point_indices_3d[fixed_indices]
-        print('temporal_rows: ', temporal_rows)
-        print('temporal_rows shape: ', temporal_rows.shape)
-        print('fixed_indices: ', fixed_indices)
-        print("-------TESTING------")
-        for i in range(10):  # For first 10 3D points
-            print(point_indices_3d[fixed_indices][0:10])
-        print("-------TESTING------")
 
         for i in range(int(n_params / 3)):  # For each 3D point to optimize
             # We fill in previous frame (each column goes to two rows...
@@ -1266,15 +1225,6 @@ class CameraGroup:
             A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3, i] = 1
             A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3 + 1, i + 1] = 1
             A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3 + 2, i + 2] = 1
-
-        '''
-
-        for i in range(int(n_params)):  # For each 3D point to optimize
-            A_sparse[n_errors_reproj:, i] = 1
-        print('A_sparse: ', A_sparse.shape)
-        '''
-
-        print('********************************************')
 
         return A_sparse
 
