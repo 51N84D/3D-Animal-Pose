@@ -14,7 +14,7 @@ def convert_to_float(frac_str):
     except ValueError:
         try:
             num, denom = frac_str.split("/")
-            if denom == 'pi':
+            if denom == "pi":
                 denom = np.pi
         except ValueError:
             return None
@@ -41,7 +41,7 @@ def sorted_nicely(l):
     return sorted(l, key=alphanumeric_key)
 
 
-def read_yaml(path_to_yaml):
+def read_yaml(path_to_yaml, frame_to_skip=None):
     assert isinstance(path_to_yaml, str)
     path_to_yaml = Path(path_to_yaml)
     with open(path_to_yaml, "r") as f:
@@ -49,6 +49,12 @@ def read_yaml(path_to_yaml):
 
     # Get points
     points_2d_joints = np.load(config.path_to_points)
+    if config.path_to_likelihoods:
+        likelihoods = np.load(config.path_to_likelihoods)
+    else:
+        likelihoods = np.empty((points_2d_joints.shape[0], points_2d_joints.shape[1], points_2d_joints.shape[2]))
+        likelihoods[:] = np.nan
+        
     num_cams = points_2d_joints.shape[0]
     num_frames = points_2d_joints.shape[1]
     num_bodyparts = points_2d_joints.shape[2]
@@ -70,10 +76,21 @@ def read_yaml(path_to_yaml):
         view_frames = [view_path / i for i in view_frames]
         if num_frames != len(view_frames):
             if num_frames - 1 == len(view_frames):
-                print(
-                    "WARNING: Mismatch between number of frames in points and number of frames; skipping first frame"
-                )
-                points_2d_joints = points_2d_joints[:, 1:, :, :]
+                
+                assert frame_to_skip is not None, """Mismatch between number of frames in points and number of frames;  
+                specify which frame to skip (e.g --skip_frame -1 or --skip_frame 0)"""
+                
+                if frame_to_skip == 0:
+                    points_2d_joints = points_2d_joints[:, 1:, :, :]
+                    likelihoods = likelihoods[:, 1:, :]
+                elif frame_to_skip == -1:
+                    points_2d_joints = points_2d_joints[:, :-1, :, :]
+                    likelihoods = likelihoods[:, :-1, :]
+
+                else:
+                    points_2d_joints = points_2d_joints[:, :frame_to_skip, frame_to_skip:, :, :]
+                    likelihoods = likelihoods[:, :frame_to_skip, frame_to_skip:, :]
+
                 num_frames -= 1
             else:
                 raise ValueError(
@@ -105,18 +122,18 @@ def read_yaml(path_to_yaml):
     rotations = config.extrinsics.rotation
 
     for i in range(num_cams):
-        if f'cam{i + 1}' not in translations:
+        if f"cam{i + 1}" not in translations:
             tvec = [0, 0, 0]
         else:
-            tvec = translations[f'cam{i + 1}']
+            tvec = translations[f"cam{i + 1}"]
 
-        if f'cam{i + 1}' not in rotations:
+        if f"cam{i + 1}" not in rotations:
             rvec = [0, 0, 0]
         else:
             rvec = [
-                convert_to_float(rotations[f'cam{i + 1}'][0]) * np.pi,
-                convert_to_float(rotations[f'cam{i + 1}'][1]) * np.pi,
-                convert_to_float(rotations[f'cam{i + 1}'][2]) * np.pi,
+                convert_to_float(rotations[f"cam{i + 1}"][0]) * np.pi,
+                convert_to_float(rotations[f"cam{i + 1}"][1]) * np.pi,
+                convert_to_float(rotations[f"cam{i + 1}"][2]) * np.pi,
             ]
 
         cam = Camera(rvec=rvec, tvec=tvec)
@@ -135,6 +152,7 @@ def read_yaml(path_to_yaml):
         "cam_group": cam_group,
         "config": config,
         "points_2d_joints": points_2d_joints,
+        "likelihoods": likelihoods,
         "frame_paths": frame_paths,
         "num_cams": num_cams,
         "num_frames": num_frames,
@@ -143,4 +161,3 @@ def read_yaml(path_to_yaml):
         "image_widths": image_widths,
         "focal_length": focal_lengths,
     }
-

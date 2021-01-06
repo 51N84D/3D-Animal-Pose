@@ -292,9 +292,30 @@ def reproject_3d_points(points_3d, info_dict, pts_array_2d, cam_group):
     return joined_list_2d
 
 
-def combine_images(images=[]):
+def combine_images(images=[], equal_size=False):
     max_width = 0  # find the max width of all the images
     total_height = 0  # the total height of the images (vertical stacking)
+
+    if equal_size:
+        # Find "smaller" image
+        min_num_pixels = np.infty
+        min_view = None
+        for i, img in enumerate(images):
+            height = img.shape[0]
+            width = img.shape[1]
+            num_pixels = height * width
+            if num_pixels < min_num_pixels:
+                min_num_pixels = num_pixels
+                min_view = i
+        
+        new_h = images[min_view].shape[0]
+        new_w = images[min_view].shape[1]
+
+        # Reshape each image to smallest
+        for i, img in enumerate(images):
+            if img.shape[0] != new_h or img.shape[1] != new_w:
+                img = cv2.resize(img, (new_w, new_h))
+                images[i] = img
 
     for img in images:
         # open all images and find their sizes

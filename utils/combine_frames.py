@@ -7,7 +7,8 @@ import re
 from tqdm import tqdm
 from utils_IO import write_video
 import numpy as np
-
+from PIL import ImageDraw
+import cv2
 
 def sorted_nicely(l):
     """ Sort the given iterable in the way that humans expect."""
@@ -26,6 +27,9 @@ def get_args():
     parser.add_argument("--ind_start", type=int, default=0)
     parser.add_argument("--ind_end", type=int, required=False)
     parser.add_argument("--fps", type=int, default=5)
+    parser.add_argument("--video_name", type=str, default='combined.mp4')
+    parser.add_argument("--add_text", action='store_true')
+    parser.add_argument("--equal_size", action='store_true', help='Make all images same size')
 
     return parser.parse_args()
 
@@ -33,10 +37,12 @@ def get_args():
 def combine_frames(
     frame_paths,
     combined_dir="./combined",
+    video_name="combined.mp4",
     ind_start=0,
     ind_end=None,
     video_dir=None,
     fps=5,
+    add_text=False
 ):
     print("Combining frames...")
     # Create dir to save combined images
@@ -62,13 +68,12 @@ def combine_frames(
         total_height = np.inf
         images = []
 
-        # Get smallest height
+        # Get total height
         for frames in nested_frames:
             img = Image.open(frames[i])
             width, height = img.size
             if height < total_height:
                 total_height = height
-
         # Get total width
         for frames in nested_frames:
             img = Image.open(frames[i])
@@ -86,11 +91,20 @@ def combine_frames(
             new_im.paste(img, (curr_width, 0))
             curr_width, _ = img.size
 
-        new_im.save(str(combined_dir / f"combined_{i}.png"))
+        new_im = np.array(new_im) 
+        new_im = new_im[:, :, ::-1].copy() 
+
+        if add_text:
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(new_im, f'{i}', (10, 30), font, 1, (0, 0, 255), 2, cv2.LINE_AA)
+            
+        cv2.imwrite(str(combined_dir / f"combined_{i}.png"), new_im)
+
+        #new_im.save(str(combined_dir / f"combined_{i}.png"))
 
     if video_dir is not None:
         print("Writing video...")
-        write_video(image_dir=combined_dir, out_file="./combined.mp4", fps=fps)
+        write_video(image_dir=combined_dir, out_file=f"./{video_name}", fps=fps)
 
 
 if __name__ == "__main__":
@@ -99,7 +113,9 @@ if __name__ == "__main__":
     combine_frames(
         args.frame_paths,
         video_dir="./",
+        video_name=args.video_name,
         ind_start=args.ind_start,
         ind_end=args.ind_end,
         fps=args.fps,
+        add_text=args.add_text
     )

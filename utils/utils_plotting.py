@@ -366,9 +366,7 @@ def vector_plot(
     # fig.show()
 
 
-def draw_circles(img, points, point_colors=None, point_size=10, nonfilled_indices=[]):
-    if len(nonfilled_indices) > 0:
-        assert len(nonfilled_indices) == points.shape[0]
+def draw_circles(img, points, point_colors=None, point_size=10, marker_type=None, thickness=-1):
 
     if point_colors is not None:
         if not isinstance(point_colors, list):
@@ -376,16 +374,25 @@ def draw_circles(img, points, point_colors=None, point_size=10, nonfilled_indice
         assert len(point_colors) == points.shape[0]
 
     for i, point in enumerate(points):
-        if len(nonfilled_indices) > 0:
-            if nonfilled_indices[i]:
-                thickness = 2
-            else:
-                thickness = -1
-        else:
-            thickness = -1
-
         if point_colors is not None:
             color = [i * 255 for i in colors.to_rgb(point_colors[i])]
+        else:
+            color = (255, 255, 255)
+
+        if marker_type is not None:
+            assert marker_type in ('cross', 'diamond', 'square')
+            if marker_type == 'cross':
+                marker = cv2.MARKER_CROSS
+
+            cv2.drawMarker(
+                img,
+                (point[0], point[1]),
+                markerType=marker,
+                markerSize=point_size,
+                thickness=2,
+                color=(color[2], color[1], color[0]),
+            )
+        else:
             cv2.circle(
                 img,
                 (point[0], point[1]),
@@ -393,10 +400,7 @@ def draw_circles(img, points, point_colors=None, point_size=10, nonfilled_indice
                 (color[2], color[1], color[0]),
                 thickness,
             )
-        else:
-            cv2.circle(
-                img, (point[0], point[1]), point_size, (255, 255, 255), thickness
-            )
+
     return img
 
 

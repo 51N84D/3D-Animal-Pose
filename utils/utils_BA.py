@@ -8,11 +8,11 @@ Created on Tue Mar 17 15:47:44 2020
 import numpy as np
 from scipy.sparse import lil_matrix
 from scipy.spatial.transform import Rotation as R
-
+from copy import deepcopy
 
 def rotate(points, rot_vecs):
     """Rotate points by given rotation vectors.
-    
+
     Rodrigues' rotation formula is used.
     """
     theta = np.linalg.norm(rot_vecs, axis=1)[:, np.newaxis]
@@ -81,7 +81,7 @@ def project(points, camera_params, offset):
 
 def fun(params, n_cameras, n_points, camera_indices, point_indices, points_2d, offset):
     """Compute residuals.
-    
+
     `params` contains camera parameters and 3-D coordinates.
     """
     camera_params = params[: n_cameras * 7].reshape((n_cameras, 7))
@@ -107,3 +107,17 @@ def bundle_adjustment_sparsity(n_cameras, n_points, camera_indices, point_indice
         A[2 * i + 1, n_cameras * 7 + point_indices * 3 + s] = 1
 
     return A
+
+
+def filter_points(points_2d, num_views=2):
+    # Keep only points that appear in >= num_views
+    # Shape can be either (num_views, num_frames, num_bodyparts, 2) or
+    # (num_views, num_frames  * num_bodparts, 2)
+    assert len(points_2d.shape) in (3, 4)
+    points_2d_new = deepcopy(points_2d)
+    if len(points_2d.shape) == 4:
+        nan_counts = np.sum(np.any(np.isnan(points_2d), axis=-1), axis=0)
+        indices_to_nan = nan_counts < num_views
+        points_2d_new[:, indices_to_nan, :] = np.nan
+    return points_2d_new
+    # return np.all(np.any(np.isnan(points_2d_og), axis=-1), axis=0)
