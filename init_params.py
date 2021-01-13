@@ -210,11 +210,11 @@ def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
         img_path = path_images[cam_num][i]
         img = plt.imread(img_path)
 
-        if len(img.shape) == 3:
-            if np.max(img) <= 1:
-                img *= 255
-        else:
+        if len(img.shape) < 3:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            
+        if np.max(img) <= 1:
+            img *= 255
 
         curr_points_2d_og = points_2d_og[cam_num, i, :, :]
         curr_points_2d_reproj = points_2d_reproj[cam_num, i, :, :]

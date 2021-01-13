@@ -26,7 +26,7 @@ downsampling = args.downsample
 global_count = 0
 local_count = 0
 success, image = vidcap.read()
-cv2.imwrite(str(frame_dir / f'{local_count}.png'), image)
+cv2.imwrite(str(frame_dir / f'{local_count}.png'), image) # save first frame
 global_count += 1
 local_count += 1
 
