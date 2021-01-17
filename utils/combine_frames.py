@@ -10,6 +10,7 @@ import numpy as np
 from PIL import ImageDraw
 import cv2
 
+
 def sorted_nicely(l):
     """ Sort the given iterable in the way that humans expect."""
     if ".DS_Store" in l:

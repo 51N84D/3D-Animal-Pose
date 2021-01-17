@@ -209,7 +209,6 @@ def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
 
         img_path = path_images[cam_num][i]
         img = plt.imread(img_path)
-
         if len(img.shape) == 3:
             if np.max(img) <= 1:
                 img *= 255
@@ -979,6 +978,7 @@ def update_fig(
         )
 
         POINTS_3D = points_3d_init
+        print('BROHHHH: ', POINTS_3D.shape)
         N_CLICKS_TRIANGULATE = n_clicks_triangulate
         new_fig, skel_fig, div_images = plot_points(points_3d_init, frame_i)
 

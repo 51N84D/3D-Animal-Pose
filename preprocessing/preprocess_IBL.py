@@ -8,6 +8,9 @@ from pathlib import Path
 from copy import deepcopy
 import argparse
 from tqdm import tqdm
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent.resolve()))
+from utils.utils_IO import write_video
 
 
 def sorted_nicely(l):
@@ -71,6 +74,12 @@ def get_args():
         help="padding for before and after occluded frames",
     )
 
+    parser.add_argument(
+        "--add_text",
+        action='store_true',
+        help="Write text on video frames",
+    )
+
     return parser.parse_args()
 
 
@@ -96,10 +105,10 @@ def select_occluded_frames(likelihoods, threshold=0.9, padding=5):
 
 def get_data():
     args = get_args()
-    raw_data_dir = Path(args.raw_data_dir)
-    save_frame_path = Path(args.save_frame_path)
-    save_points_path = Path(args.save_points_path)
-    save_lh_path = Path(args.save_lh_path)
+    raw_data_dir = Path(args.raw_data_dir).resolve()
+    save_frame_path = Path(args.save_frame_path).resolve()
+    save_points_path = Path(args.save_points_path).resolve()
+    save_lh_path = Path(args.save_lh_path).resolve()
     num_frames = args.num_frames
     start_frame = args.start_frame
 
@@ -236,6 +245,8 @@ def get_data():
 
             # Extract frames at specific timesteps
             vidcap = cv2.VideoCapture(str(mp4_files[view]))
+            fps = vidcap.get(cv2.CAP_PROP_FPS)
+
             count = 0
             local_count = 0
             tracker_count = 0
@@ -248,16 +259,17 @@ def get_data():
 
                     # Handle right view
                     if view == "right":
-                        cv2.putText(
-                            image,
-                            str(timestamps[view][count]),
-                            (width - 300, height - 100),
-                            font,
-                            1,
-                            (255, 255, 255),
-                            2,
-                            cv2.LINE_AA,
-                        )
+                        if args.add_text:
+                            cv2.putText(
+                                image,
+                                str(timestamps[view][count]),
+                                (width - 300, height - 100),
+                                font,
+                                1,
+                                (255, 255, 255),
+                                2,
+                                cv2.LINE_AA,
+                            )
 
                         if count in idx_aligned:
                             if tracker_count in keep_dict:
@@ -269,16 +281,17 @@ def get_data():
 
                     # Handle left view
                     else:
-                        cv2.putText(
-                            image,
-                            str(timestamps[view][count]),
-                            (width - 400, height - 100),
-                            font,
-                            2,
-                            (255, 255, 255),
-                            2,
-                            cv2.LINE_AA,
-                        )
+                        if args.add_text:
+                            cv2.putText(
+                                image,
+                                str(timestamps[view][count]),
+                                (width - 400, height - 100),
+                                font,
+                                2,
+                                (255, 255, 255),
+                                2,
+                                cv2.LINE_AA,
+                            )
 
                         if count in keep_dict:
                             cv2.imwrite(str(frame_path / f"{local_count}.png"), image)
@@ -290,6 +303,8 @@ def get_data():
 
                 if tracker_count >= num_frames or not success:
                     break
+            # Now write video:
+            write_video(image_dir=str(frame_path), out_file=str(save_frame_path / f'{view}.mp4'), fps=fps)
         # ------------------------------------------------------------
 
     np.save(save_points_path, multiview_arr)

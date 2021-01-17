@@ -62,6 +62,7 @@ def read_yaml(path_to_yaml, frame_to_skip=None):
     # Get image paths and dimensions
     path_to_views = Path(config.path_to_images).resolve()
     views_dirs = sorted_nicely(os.listdir(path_to_views))
+    
     assert num_cams == len(
         views_dirs
     ), "Mismatch between number of views in points, and number of views in frames path"
