@@ -614,6 +614,11 @@ app.layout = html.Div(
             style={"float": "right"},
         ),
         html.Div(id="traces-out", children="", style={"float": "right"}),
+        html.Div(
+            html.Button("Save points", id="points-button", n_clicks=0),
+            style={"float": "right"},
+        ),
+        html.Div(id="points-out", children="", style={"float": "right"}),
         html.Div(dcc.Input(id="focal-len", type="text", value=str(focal_length[0]))),
         html.Div(id="focal-out"),
     ]
@@ -828,6 +833,19 @@ def save_traces(n_clicks):
 
         tPlot.savefig(str(plot_dir / "point_confidences.png"))
         # cv2.imwrite(str(plot_dir / f"reproj_{frame_i}.jpg"), combined_proj)
+
+
+@app.callback(
+    Output("points-out", "children"),
+    [Input("points-button", "n_clicks")],
+)
+def save_points(n_clicks):
+    if POINTS_3D is None:
+        return None
+    points_dir = Path('./points').resolve()
+    points_dir.mkdir(parents=True, exist_ok=True)
+    np.save(points_dir / f'{Path(args.config).stem}_3d.npy', POINTS_3D)
+
 
 '''
 @app.callback(
