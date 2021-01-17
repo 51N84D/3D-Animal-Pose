@@ -121,3 +121,56 @@ def filter_points(points_2d, num_views=2):
         points_2d_new[:, indices_to_nan, :] = np.nan
     return points_2d_new
     # return np.all(np.any(np.isnan(points_2d_og), axis=-1), axis=0)
+
+
+def clean_nans(pts_array_2d):
+    # pts_array_2d should be (num_cams, num_frames * num_bodyparts, 2)
+    # Clean up nans
+    count_nans = np.sum(np.isnan(pts_array_2d), axis=0)[:, 0]
+    nan_rows = count_nans > pts_array_2d.shape[0] - 2
+
+    pts_all_flat = np.arange(pts_array_2d.shape[1])
+    pts_2d_filtered = pts_array_2d[:, ~nan_rows, :]
+    clean_point_indices = pts_all_flat[~nan_rows]
+    return pts_2d_filtered, clean_point_indices
+
+
+def refill_arr(points_2d, info_dict):
+    points_2d = deepcopy(points_2d)
+    clean_point_indices = info_dict["clean_point_indices"]
+    num_points_all = info_dict["num_points_all"]
+    num_frames = info_dict["num_frames"]
+    all_point_indices = np.arange(num_points_all)
+    print(clean_point_indices)
+    print(points_2d.shape)
+
+    nan_point_indices = np.asarray(
+        [x for x in all_point_indices if x not in clean_point_indices]
+    )
+    print(nan_point_indices)
+
+    # If points_2d is (num_views, num_points, 2):
+    if len(points_2d.shape) == 3:
+        if len(nan_point_indices) == 0:
+            return points_2d.reshape(
+                points_2d.shape[0], num_frames, -1, points_2d.shape[-1]
+            )
+
+        filled_points_2d = np.empty((points_2d.shape[0], num_points_all, 2))
+        filled_points_2d[:, clean_point_indices, :] = points_2d
+        filled_points_2d[:, nan_point_indices, :] = np.nan
+        filled_points_2d = np.reshape(
+            filled_points_2d, (points_2d.shape[0], num_frames, -1, 2)
+        )
+
+    # Elif points2d is (num_points, 2) --> this happens if we consider each view separately
+    elif len(points_2d.shape) == 2:
+        if len(nan_point_indices) == 0:
+            return points_2d.reshape(num_frames, -1, points_2d.shape[-1])
+
+        filled_points_2d = np.empty((num_points_all, 2))
+        filled_points_2d[clean_point_indices, :] = points_2d
+        filled_points_2d[nan_point_indices, :] = np.nan
+        filled_points_2d = np.reshape(filled_points_2d, (num_frames, -1, 2))
+
+    return filled_points_2d
