@@ -996,7 +996,7 @@ class CameraGroup:
             )
             points = p2ds.reshape(points.shape)
         else:
-            p3ds = self.triangulate(points_shaped, progress=init_progress)
+            p3ds = self.triangulate(points_shaped, progress=init_progress) # if < 2 visible views per point, returns a NaN
         p3ds = p3ds.reshape((n_frames, n_joints, 3))
 
         c = np.isfinite(p3ds[:, :, 0])

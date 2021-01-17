@@ -12,32 +12,35 @@ from utils.utils_IO import (
 import commentjson
 from copy import deepcopy
 
+# ToDo: make more general!! especially paths.
+
 
 def get_data():
     import h5py
-
+    
+    # data_dir is e.g., Joao's folder with .json, folders per view, and a .csv dlc file
     data_dir = Path(
-        "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data"
-    ).resolve()
-    filename = data_dir / "tank_dataset_5.h5"
-    f = h5py.File(filename, "r")
-    print("-------------DATASET INFO--------------")
-    print("keys: ", f.keys())
-    print("annotated: ", f["annotated"])
-    print("annotations: ", f["annotations"])
-    print("images: ", f["images"])
-    print("skeleton: ", f["skeleton"])
-    print("skeleton_names: ", f["skeleton_names"])
-    print("----------------------------------------")
+        "../../Video_Datasets/Sawtell-data/20201102_Joao"
+    ).resolve() # assuming you run from preprocessing folder
+    # filename = data_dir / "tank_dataset_5.h5"
+    # f = h5py.File(filename, "r")
+    # print("-------------DATASET INFO--------------")
+    # print("keys: ", f.keys())
+    # print("annotated: ", f["annotated"])
+    # print("annotations: ", f["annotations"])
+    # print("images: ", f["images"])
+    # print("skeleton: ", f["skeleton"])
+    # print("skeleton_names: ", f["skeleton_names"])
+    # print("----------------------------------------")
 
     img_settings_file = data_dir / "image_settings.json"
-    img_settings = commentjson.load(open(str(img_settings_file), "r"))
+    img_settings = commentjson.load(open(str(img_settings_file), "r")) #ToDo: the path in the json doesn't make sense
     num_cameras = len(img_settings["height_lims"])
 
-    data_dir = Path(
-        "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking"
-    ).resolve()
-    dlc_file = data_dir / "videoEOD_cropped000_tracking.csv"
+    # data_dir = Path(
+    #     "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking"
+    # ).resolve()
+    dlc_file = '/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv' # data_dir / "videoEOD_cropped000_tracking.csv"
     dlc_data = pd.read_csv(dlc_file)
 
     # points are (num_frames, 3 * num_bodyparts)
@@ -51,6 +54,7 @@ def get_data():
     confidences = []
     skeleton_names = []
     for i, name in enumerate(columns):
+        # return a length-108 list whose entries are 1D np.arrays
         if name.endswith("x"):
             x_points.append(dlc_points[:, i])
             skeleton_names.append(name[:-2])
@@ -70,6 +74,13 @@ def get_data():
     # Make Nans if low confidence:
     pts_array[confidences < 0.5] = np.nan
     print("pts_array: ", pts_array.shape)
+    
+    # for now very manual: take every fifth row, for frames up to 25000
+    downsampling = 5
+    max_frame = 25000
+    rows_to_use = np.concatenate([np.zeros(1), 
+                                np.arange(downsampling-1,max_frame,downsampling)]).astype('int32') # inds for rows of dlc
+    pts_array = pts_array[rows_to_use, :, :]
 
     # Get number of frames
     num_frames = pts_array.shape[0]
@@ -89,24 +100,25 @@ def get_data():
     # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
     bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
     # bp_to_keep = []
+    
 
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
 
     new_skeleton_names = []
     bodyparts = []
-    for idx, name in enumerate(f["skeleton_names"]):
+    for idx, name in enumerate(skeleton_names): # was prev f["skeleton_names"] building on the labels data.
         if len(bp_to_keep) > 0:
             skip_bp = True
             for bp in bp_to_keep:
-                if bp == name.decode("UTF-8").split("_")[0]:
+                if bp == name.split("_")[0]: # bp == name.decode("UTF-8").split("_")[0]:
                     skip_bp = False
             if skip_bp:
                 continue
 
         new_skeleton_names.append(name)
         for view_name in view_names:
-            if view_name in name.decode("UTF-8").split("_")[-1]:
+            if view_name in name.split("_")[-1]:# name.decode("UTF-8").split("_")[-1]:
                 multiview_idx_to_name[idx] = view_name
                 multiview_name_to_idx[view_name].append(idx)
 
@@ -158,7 +170,7 @@ def get_data():
     info_dict["clean_point_indices"] = clean_point_indices
 
     # Get path images
-    multivew_images_dir = data_dir / "images"
+    multivew_images_dir = data_dir #/ "frames"
     view_dirs = os.listdir(multivew_images_dir)
     # NOTE: assumes folders for each view are ordered the same as in image_settings.json
     # i.e. view_0 corresponds to height_lims[0]
@@ -197,7 +209,7 @@ def get_data():
         focal_lengths.append(focal_length)
 
     # Write points
-    points_path = Path('/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/sawtell.npy')
+    points_path = data_dir / '2d_points_array.npy'
     np.save(points_path, pts_array_2d_joints)
 
     '''
