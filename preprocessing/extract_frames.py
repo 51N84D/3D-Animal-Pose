@@ -1,22 +1,32 @@
+### script that extracts frames from a video, written by Sun and edited by Dan.
+'''To run in terminal, when in 3D-Animal-Pose main folder, run
+3D-Animal-Pose danbiderman$ python3 preprocessing/extract_frames.py --video_path='/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated.avi' --frames_path='../Video_Datasets/Sawtell-data/20201102_Joao/frames' --max_frames=25000 --downsample=5'''
+
+
 import cv2
 from pathlib import Path
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--video_path", default=None, help='str with video path')
+parser.add_argument("--frames_path", default=None, help='str with path for saving frames')
+parser.add_argument("--max_frames", default=100, type = int, help='int with max frames starting from zero')
+parser.add_argument("--downsample", default=1, type = int, help='int with num_frames to downsample')
+args, _ = parser.parse_known_args()
 
 
-# video_path = Path(
-#     "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking/videoEOD_cropped000.avi"
-# )
+video_path = Path(args.video_path)
+frame_dir = Path(args.frames_path)
 
-video_path = Path('/Volumes/paninski-locker/data/ibl/raw_data/cortexlab/Subjects/KS023/2019-12-10/001/raw_video_data/_iblrig_leftCamera.raw.mp4')
-# frame_dir = video_path.parent / Path('frames')
-frame_dir = Path('./left_frames')
+print('Starting to save the frames of %s in the folder %s' % (str(video_path), str(frame_dir)))
 frame_dir.mkdir(exist_ok=True, parents=True)
 vidcap = cv2.VideoCapture(str(video_path))
 
-downsampling = 1
+downsampling = args.downsample
 global_count = 0
 local_count = 0
 success, image = vidcap.read()
-cv2.imwrite(str(frame_dir / f'{local_count}.png'), image)
+cv2.imwrite(str(frame_dir / f'{local_count}.png'), image) # save first frame
 global_count += 1
 local_count += 1
 
@@ -26,5 +36,5 @@ while success:
         cv2.imwrite(str(frame_dir / f'{local_count}.png'), image)
         local_count += 1
     global_count += 1
-    if global_count == 100:
+    if global_count == args.max_frames:
         break

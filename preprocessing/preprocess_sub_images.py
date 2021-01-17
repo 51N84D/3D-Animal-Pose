@@ -35,7 +35,7 @@ def sorted_nicely(l):
 
 if __name__ == "__main__":
     dataset_path = Path(args.dataset_path).resolve()
-    raw_img_path = os.path.join(dataset_path, 'raw_images')
+    raw_img_path = os.path.join(dataset_path, 'frames') # was previously 'raw_images'
       
     config = commentjson.load(open(os.path.join(dataset_path, 'image_settings.json'),
                                    'r'))
