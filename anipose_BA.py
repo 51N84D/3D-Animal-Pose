@@ -1096,7 +1096,6 @@ class CameraGroup:
         )
 
         p3ds_filler = opt2.x
-
         p3ds[~fixed_indices] = p3ds_filler.reshape(p3ds[~fixed_indices].shape)
 
         t2 = time.time()
