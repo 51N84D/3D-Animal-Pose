@@ -248,15 +248,18 @@ def write_video(image_dir, out_file, fps=5):
         im_list.remove(".DS_Store")
 
     img_array = []
+
     for filename in im_list:
         img = cv2.imread(os.path.join(image_dir, filename))
         height, width, layers = img.shape
         size = (width, height)
         img_array.append(img)
-
+    
     out = cv2.VideoWriter(
-        out_file, cv2.VideoWriter_fourcc("m", "p", "4", "v"), fps, size
+        filename=out_file, fourcc=cv2.VideoWriter_fourcc("m", "p", "4", "v"), fps=fps, frameSize=size
     )  # 15 fps
+
+    cv2.VideoWriter()
 
     for i in range(len(img_array)):
         out.write(img_array[i])
