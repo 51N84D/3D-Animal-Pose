@@ -1064,9 +1064,6 @@ class CameraGroup:
         x0 = self._initialize_params_triangulation(
             p3ds_intp, constraints, constraints_weak
         )
-        print('n_frames: ', n_frames)
-        print('n_joints: ', n_joints)
-
 
         # Select 3D points to optimize
         x0 = x0.reshape(n_frames, n_joints, 3)
@@ -1078,10 +1075,6 @@ class CameraGroup:
         jac = self._jac_sparsity_progressive(
             points, n_deriv_smooth
         )
-
-        print('points: ', points.shape)
-        print('x0: ', x0.shape)
-
 
         opt2 = optimize.least_squares(
             self._error_fun_progressive,
