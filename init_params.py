@@ -979,7 +979,6 @@ def update_fig(
         )
 
         POINTS_3D = points_3d_init
-        print('BROHHHH: ', POINTS_3D.shape)
         N_CLICKS_TRIANGULATE = n_clicks_triangulate
         new_fig, skel_fig, div_images = plot_points(points_3d_init, frame_i)
 
