@@ -3,6 +3,7 @@ import argparse
 from preprocessing.process_config import read_yaml
 from utils.utils_BA import clean_nans
 import numpy as np
+from utils.points_to_dataframe import points3d_arr_to_df
 
 
 def get_args():
@@ -19,6 +20,7 @@ if __name__ == "__main__":
     cam_group = experiment_data["cam_group"]
     num_frames = experiment_data["num_frames"]
     num_bodyparts = experiment_data["num_bodyparts"]
+    config = experiment_data["config"]
 
     # Bundle adjust points
     pts_2d_joints = experiment_data["points_2d_joints"]
@@ -37,5 +39,7 @@ if __name__ == "__main__":
     # Save points
     points_dir = Path('./points').resolve()
     points_dir.mkdir(parents=True, exist_ok=True)
-    np.save(points_dir / f'{Path(args.config).stem}_3d.npy', points_3d)
+    
+    df = points3d_arr_to_df(points_3d, config.bp_names)
+    df.to_csv(points_dir / f'{Path(args.config).stem}_3d.csv')
     print("Finished saving points.")
