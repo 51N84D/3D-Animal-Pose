@@ -11,12 +11,13 @@ def get_args():
 
     # dataset
     parser.add_argument("--config", type=str, default="./configs/sawtell.yaml")
+    parser.add_argument("--skip_frame", default=None, type=int, help="frame to skip")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = get_args()
-    experiment_data = read_yaml(args.config)
+    experiment_data = read_yaml(args.config, args.skip_frame)
     cam_group = experiment_data["cam_group"]
     num_frames = experiment_data["num_frames"]
     num_bodyparts = experiment_data["num_bodyparts"]
