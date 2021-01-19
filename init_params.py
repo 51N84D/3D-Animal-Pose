@@ -13,6 +13,7 @@ from utils.utils_IO import (
     combine_images,
 )
 from utils.utils_BA import clean_nans
+from utils.points_to_dataframe import points3d_arr_to_df
 import plotly.io as pio
 import plotly.graph_objs as go
 
@@ -395,8 +396,6 @@ img_height = experiment_data["image_heights"]
 focal_length = experiment_data["focal_length"]
 path_images = experiment_data["frame_paths"]
 num_cameras = experiment_data["num_cams"]
-if "bodypart_names" in experiment_data:
-    bodypart_names = experiment_data["bodypart_names"]
 num_bodyparts = experiment_data["num_bodyparts"]
 num_frames = experiment_data["num_frames"]
 
@@ -785,11 +784,17 @@ def save_traces(n_clicks):
     [Input("points-button", "n_clicks")],
 )
 def save_points(n_clicks):
+    global config
+    global num_frames
+    global num_bodyparts
     if POINTS_3D is None:
         return None
+    if len(POINTS_3D.shape) < 3:
+        points_3d = POINTS_3D.reshape(num_frames, num_bodyparts, 3)
     points_dir = Path('./points').resolve()
     points_dir.mkdir(parents=True, exist_ok=True)
-    np.save(points_dir / f'{Path(args.config).stem}_3d.npy', POINTS_3D)
+    df = points3d_arr_to_df(points_3d, config.bp_names)
+    df.to_csv(points_dir / f'{Path(args.config).stem}_3d.csv')
 
 
 '''

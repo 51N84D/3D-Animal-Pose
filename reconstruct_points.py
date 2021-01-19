@@ -17,6 +17,9 @@ if __name__ == "__main__":
     args = get_args()
     experiment_data = read_yaml(args.config)
     cam_group = experiment_data["cam_group"]
+    num_frames = experiment_data["num_frames"]
+    num_bodyparts = experiment_data["num_bodyparts"]
+
     # Bundle adjust points
     pts_2d_joints = experiment_data["points_2d_joints"]
     pts_2d = pts_2d_joints.reshape(
@@ -29,7 +32,8 @@ if __name__ == "__main__":
 
     # Triangulate points
     points_3d = cam_group.triangulate_progressive(pts_2d_joints)
-    
+    if len(points_3d.shape) < 3:
+        points_3d = points_3d.reshape(num_frames, num_bodyparts, 3)
     # Save points
     points_dir = Path('./points').resolve()
     points_dir.mkdir(parents=True, exist_ok=True)
