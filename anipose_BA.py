@@ -1212,7 +1212,7 @@ class CameraGroup:
         # sparse constraints for smoothness in time
         temporal_rows = point_indices_3d[fixed_indices]
 
-        for i in range(int(n_params / 3)):  # For each 3D point to optimize
+        for i in range(int(n_params / 3) - 1):  # For each 3D point to optimize
             # We fill in previous frame (each column goes to two rows...
             # ... except if column is associated with frame 0)
             A_sparse[n_errors_reproj + temporal_rows[i] * 3, i] = 1
