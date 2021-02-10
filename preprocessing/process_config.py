@@ -6,7 +6,7 @@ import re
 import os
 from PIL import Image
 from anipose_BA import CameraGroup, Camera
-
+import warnings
 
 def convert_to_float(frac_str):
     try:
@@ -94,9 +94,7 @@ def read_yaml(path_to_yaml, frame_to_skip=None):
 
                 num_frames -= 1
             else:
-                raise ValueError(
-                    "Mismatch between number of frames in points and number of frames"
-                )
+                warnings.warn("Mismatch between number of frames in points and number of frames")
 
         frame_paths.append(view_frames)
 

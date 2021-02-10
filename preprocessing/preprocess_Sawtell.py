@@ -1,19 +1,36 @@
 from __future__ import print_function
 import os
 import numpy as np
-from pathlib import Path
-from utils.utils_IO import (
-    sorted_alphanumeric,
-)
+from pathlib import Path, PurePath
+import sys
+
+sys.path.append(str(Path(__file__).resolve().parent.parent.resolve()))
+import csv
+import argparse
+from utils.utils_IO import sorted_alphanumeric
+from PIL import Image
+from tqdm import tqdm
+
+def get_args():
+    parser = argparse.ArgumentParser(description="Sawtell preprocessing")
+    parser.add_argument(
+        "--dataset", type=str, default="./data/Sawtell-data/tank_dataset_11.h5"
+    )
+    parser.add_argument(
+        "--image_settings", type=str, default="./data/Sawtell-data/image_settings.json"
+    )
+    return parser.parse_args()
 
 
 def get_data():
     import h5py
 
-    data_dir = Path("./data/Sawtell-data").resolve()
-    filename = data_dir / "tank_dataset_5.h5"
+    args = get_args()
+    filename = Path(args.dataset)
+    img_settings_file = Path(args.image_settings)
+
     f = h5py.File(filename, "r")
-    """
+
     print("-------------DATASET INFO--------------")
     print("keys: ", f.keys())
     print("annotated: ", f["annotated"])
@@ -21,21 +38,22 @@ def get_data():
     print("images: ", f["images"])
     print("skeleton: ", f["skeleton"])
     print("skeleton_names: ", f["skeleton_names"])
+    print("frame_number: ", f["frame_number"])
+    print("video_name: ", f["video_name"])
     print("----------------------------------------")
-    """
+
+    # for i, fn in enumerate(f['frame_number']):
+    #    print('video: ', f['video_name'][i])
+    #    print('frame: ', fn)
 
     # Read frame limits:
     import commentjson
 
-    img_settings_file = data_dir / "image_settings.json"
     img_settings = commentjson.load(open(str(img_settings_file), "r"))
     num_cameras = len(img_settings["height_lims"])
 
     # Get points from hd5
     pts_array = np.asarray(f["annotations"])
-
-    # Get number of frames
-    num_frames = pts_array.shape[0]
 
     # Get number of bodyparts
     num_analyzed_body_parts = int(pts_array.shape[1] / num_cameras)
@@ -50,7 +68,8 @@ def get_data():
 
     # NOTE: Empty list keeps all bodyparts
     # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
-    bp_to_keep = ["chin"]
+    # bp_to_keep = ["chin"]
+    bp_to_keep = []
 
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
@@ -98,74 +117,64 @@ def get_data():
 
     assert multiview_pts_2d.shape[-1] == 2
 
-    num_points_all = multiview_pts_2d.shape[1]
+    bp_row = ["bodyparts"]
+    coord_row = ["coords"]
+    bodyparts = []
+    for name in list(f["skeleton_names"][:]):
+        bp_row.append(name.decode("UTF-8"))
+        bp_row.append(name.decode("UTF-8"))
+        bodyparts.append(name.decode("UTF-8"))
+        coord_row.append("x")
+        coord_row.append("y")
 
-    # pts_array_2d = multiview_pts_2d
-    # clean_point_indices = np.arange(multiview_pts_2d.shape[1])
+    scorer = "sun"
+    # Can try construction each row separately
+    scorer_row = ["scorer"] + [scorer] * (len(bp_row) - 1)
+    
+    with open('./bodyparts.txt', 'w') as txt_f:
+        for bp in bodyparts:
+            txt_f.write("%s\n" % bp)
+    # xy_coords = list(zip(pts_array[0, :, 0], pts_array[0, :, 1]))
+    # xy_coords_flat = [item for sublist in xy_coords for item in sublist]
 
-    # Clean up nans
-    count_nans = np.sum(np.isnan(multiview_pts_2d), axis=0)[:, 0]
-    nan_rows = count_nans > num_cameras - 2
-    # nan_rows = np.isnan(multiview_pts_2d).any(axis=-0).any(axis=-1)
+    # Get max frame:
+    max_frame = 0
+    for fn in f["frame_number"]:
+        if fn > max_frame:
+            max_frame = fn
 
-    pts_all_flat = np.arange(multiview_pts_2d.shape[1])
-    pts_array_2d = multiview_pts_2d[:, ~nan_rows, :]
-    clean_point_indices = pts_all_flat[~nan_rows]
+    with tqdm(total=len(f['images'])) as pbar:
+        for i, img in enumerate(f["images"]):
+            xy_coords = list(zip
+            (pts_array[i, :, 0], pts_array[i, :, 1]))
+            xy_coords_flat = [item for sublist in xy_coords for item in sublist]
+            full_vid_path = PurePath(
+                (f["video_name"][i].decode("UTF-8").split(":")[-1]).replace("\\", "/")
+            )
+            dir_name = full_vid_path.parent.name
+            if dir_name == '':
+                pbar.update(1)
+                continue
+            label_dir = Path("./labeled-data") / dir_name
+            label_dir.mkdir(parents=True, exist_ok=True)
+            frame_name = f"{f['frame_number'][i]:0{len(str(max_frame))}d}"
 
-    info_dict = {}
-    info_dict["num_frames"] = num_frames
-    info_dict["num_analyzed_body_parts"] = num_analyzed_body_parts
-    info_dict["num_cameras"] = num_cameras
-    info_dict["num_points_all"] = num_points_all
-    info_dict["clean_point_indices"] = clean_point_indices
-
-    # Get path images
-    multivew_images_dir = Path("./data/Sawtell-data/images").resolve()
-    view_dirs = os.listdir(multivew_images_dir)
-    # NOTE: assumes folders for each view are ordered the same as in image_settings.json
-    # i.e. view_0 corresponds to height_lims[0]
-
-    path_images = []
-    for i in range(num_cameras):
-        for view in view_dirs:
-            if str(i) in view:
-                view_images = os.listdir(multivew_images_dir / view)
-                view_images = sorted_alphanumeric(view_images)
-                view_images = [
-                    str(multivew_images_dir / Path(view) / i) for i in view_images
-                ]
-                path_images.append(view_images)
-
-    # Get image dimensions
-    from PIL import Image
-
-    img_heights = []
-    img_widths = []
-    for i in range(num_cameras):
-        img = Image.open(path_images[i][0])
-        width, height = img.size
-        img_heights.append(height)
-        img_widths.append(width)
-
-    # Get focal lengths
-    focal_lengths = []
-    focal_length_mm = 15
-    sensor_size = 12
-    for i in range(num_cameras):
-        focal_length = (
-            focal_length_mm * ((img_heights[i] ** 2 + img_widths[i] ** 2) ** (1 / 2))
-        ) / sensor_size
-
-        focal_lengths.append(focal_length)
-
-    return {
-        "img_width": img_widths,
-        "img_height": img_heights,
-        "pts_array_2d": pts_array_2d,
-        "info_dict": info_dict,
-        "path_images": path_images,
-        "focal_length": focal_lengths,
-    }
+            label_path = label_dir / ('img' + frame_name + ".png")
+            # Write image to label path:
+            pil_image = Image.fromarray(np.squeeze(img))
+            pil_image.save(label_path)
+            if os.path.isfile(label_dir / f"CollectedData_{scorer}.csv"):
+                with open(label_dir / f"CollectedData_{scorer}.csv", "a") as csvfile:
+                    csvwriter = csv.writer(csvfile)
+                    csvwriter.writerow([label_path] + xy_coords_flat)
+            else:
+                with open(label_dir / f"CollectedData_{scorer}.csv", "w") as csvfile:
+                    csvwriter = csv.writer(csvfile)
+                    csvwriter.writerow(scorer_row)
+                    csvwriter.writerow(bp_row)
+                    csvwriter.writerow(coord_row)
+                    csvwriter.writerow([label_path] + xy_coords_flat)
+            pbar.update(1)
 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ def get_args():
         nargs="+",
         help="sizes of points in each view",
     )
+    parser.add_argument("--save_reprojections", action='store_true')
+
     return parser.parse_args()
 
 
@@ -47,7 +49,6 @@ def save_reproj(points_3d, cam_group, pts_2d_joints, point_sizes, F, color_list)
     """Write parameters to file"""
     points_2d_reproj = reproject_points(points_3d, cam_group)
     points_2d_og = pts_2d_joints
-    print("points_2d_og: ", points_2d_og.shape)
     for frame_i in tqdm(range(points_2d_og.shape[1])):
         plot_dir = Path("./reprojections")
         plot_dir.mkdir(exist_ok=True, parents=True)
@@ -223,4 +224,5 @@ if __name__ == "__main__":
     df.to_csv(points_dir / f"{Path(args.config).stem}_3d.csv")
     print("Finished saving points.")
 
-    save_reproj(points_3d, cam_group, pts_2d_joints, point_sizes, F, color_list)
+    if args.save_reprojections:
+        save_reproj(points_3d, cam_group, pts_2d_joints, point_sizes, F, color_list)

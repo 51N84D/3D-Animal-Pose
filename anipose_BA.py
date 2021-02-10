@@ -670,7 +670,7 @@ class CameraGroup:
             a = i * n_cam_params
             b = (i + 1) * n_cam_params
             #params[a : a + 3] = cam.init_rot
-            #params[a + 3 : a + 6] = cam.init_trans
+            params[a + 3 : a + 6] = cam.init_trans
             #Neglect distortion
             params[a + 7] = 0
             focal_len = cam.get_focal_length()
@@ -1211,22 +1211,26 @@ class CameraGroup:
 
         # sparse constraints for smoothness in time
         temporal_rows = point_indices_3d[fixed_indices]
-
-        for i in range(int(n_params / 3) - 1):  # For each 3D point to optimize
+        
+        for i in range(int(n_params / 3)):  # For each 3D point to optimize
+            if i >= len(temporal_rows):
+                break
             # We fill in previous frame (each column goes to two rows...
             # ... except if column is associated with frame 0)
-            A_sparse[n_errors_reproj + temporal_rows[i] * 3, i] = 1
-            A_sparse[n_errors_reproj + temporal_rows[i] * 3 + 1, i + 1] = 1
-            A_sparse[n_errors_reproj + temporal_rows[i] * 3 + 2, i + 2] = 1
+            if (n_errors_reproj + temporal_rows[i] * 3) < A_sparse.shape[0]:
+                A_sparse[n_errors_reproj + temporal_rows[i] * 3, i] = 1
+                A_sparse[n_errors_reproj + temporal_rows[i] * 3 + 1, i + 1] = 1
+                A_sparse[n_errors_reproj + temporal_rows[i] * 3 + 2, i + 2] = 1
 
-            if temporal_rows[i] != 0:
+            if temporal_rows[i] != 0 and (n_errors_reproj + temporal_rows[i - 1] * 3) < A_sparse.shape[0]:
                 A_sparse[n_errors_reproj + temporal_rows[i - 1] * 3, i] = 1
                 A_sparse[n_errors_reproj + temporal_rows[i - 1] * 3 + 1, i + 1] = 1
                 A_sparse[n_errors_reproj + temporal_rows[i - 1] * 3 + 2, i + 2] = 1
-
-            A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3, i] = 1
-            A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3 + 1, i + 1] = 1
-            A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3 + 2, i + 2] = 1
+            
+            if i + 1 < len(temporal_rows) and (n_errors_reproj + temporal_rows[i + 1] * 3) < A_sparse.shape[0]:
+                A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3, i] = 1
+                A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3 + 1, i + 1] = 1
+                A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3 + 2, i + 2] = 1
 
         return A_sparse
 

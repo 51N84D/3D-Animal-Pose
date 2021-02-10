@@ -7,7 +7,7 @@ import re
 from tqdm import tqdm
 from utils_IO import write_video
 import numpy as np
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageOps
 import cv2
 
 
@@ -31,6 +31,9 @@ def get_args():
     parser.add_argument("--video_name", type=str, default='combined.mp4')
     parser.add_argument("--add_text", action='store_true')
     parser.add_argument("--equal_size", action='store_true', help='Make all images same size')
+    parser.add_argument("--hflip", type=int, nargs="+")
+    parser.add_argument("--vertical", action='store_true', help='stack vertically')
+    parser.add_argument("--resize_max", action='store_true', help='resize smaller images to max')
 
     return parser.parse_args()
 
@@ -43,9 +46,14 @@ def combine_frames(
     ind_end=None,
     video_dir=None,
     fps=5,
-    add_text=False
-):
+    add_text=False,
+    hflip=None,
+    vertical=False,
+    resize_max=False
+):  
     print("Combining frames...")
+    if hflip is not None and isinstance(hflip, int):
+        hflip = [hflip]
     # Create dir to save combined images
     combined_dir = Path(combined_dir)
     combined_dir.mkdir(parents=True, exist_ok=True)
@@ -65,32 +73,103 @@ def combine_frames(
         )
 
     for i in tqdm(range(ind_start, ind_end)):
-        total_width = 0
-        total_height = np.inf
-        images = []
 
-        # Get total height
-        for frames in nested_frames:
-            img = Image.open(frames[i])
-            width, height = img.size
-            if height < total_height:
-                total_height = height
-        # Get total width
-        for frames in nested_frames:
-            img = Image.open(frames[i])
-            width, height = img.size
-            if height > total_height:
-                # Resize image while maintaining ratio
-                new_w = int(width * (total_height / height))
-                img = img.resize((new_w, total_height), Image.BICUBIC)
-            total_width += img.size[0]
-            images.append(img)
+        images = []
+        if vertical: # Stack vertically
+            if resize_max:
+                total_width = 0
+                total_height = 0
+                # Get total width
+                for frames in nested_frames:
+                    img = Image.open(frames[i])
+                    width, height = img.size
+                    if width > total_width:
+                        total_width = width
+                for vid_idx, frames in enumerate(nested_frames):
+                    img = Image.open(frames[i])
+                    width, height = img.size
+                    if width < total_width:
+                        # Resize image while maintaining ratio
+                        new_h = int(height * (total_width / width))
+                        img = img.resize((total_width, new_h), Image.BICUBIC)
+                    total_height += img.size[1]
+                    if hflip is not None and vid_idx in hflip:
+                        img = ImageOps.mirror(img)
+                    images.append(img)
+            else:
+                total_width = np.inf
+                total_height = 0
+                # Get total height
+                for frames in nested_frames:
+                    img = Image.open(frames[i])
+                    width, height = img.size
+                    if width < total_width:
+                        total_width = width
+                for vid_idx, frames in enumerate(nested_frames):
+                    img = Image.open(frames[i])
+                    width, height = img.size
+                    if width > total_width:
+                        # Resize image while maintaining ratio
+                        new_h = int(height * (total_width / width))
+                        img = img.resize((total_width, new_h), Image.BICUBIC)
+                    total_height += img.size[1]
+                    if hflip is not None and vid_idx in hflip:
+                        img = ImageOps.mirror(img)
+                    images.append(img)
+        else: # Stack horizontally
+            if resize_max: # Scale up smaller images
+                total_width = 0
+                total_height = 0
+                # Get total height
+                for frames in nested_frames:
+                    img = Image.open(frames[i])
+                    width, height = img.size
+                    if height > total_height:
+                        total_height = height
+                for vid_idx, frames in enumerate(nested_frames):
+                    img = Image.open(frames[i])
+                    width, height = img.size
+                    if height < total_height:
+                        # Resize image while maintaining ratio
+                        new_w = int(width * (total_height / height))
+                        img = img.resize((new_w, total_height), Image.BICUBIC)
+                    total_width += img.size[0]
+                    if hflip is not None and vid_idx in hflip:
+                        img = ImageOps.mirror(img)
+                    images.append(img)
+            else: # SCale down larger images
+                total_width = 0
+                total_height = np.inf
+                # Get total height
+                for frames in nested_frames:
+                    img = Image.open(frames[i])
+                    width, height = img.size
+                    if height < total_height:
+                        total_height = height
+                for vid_idx, frames in enumerate(nested_frames):
+                    img = Image.open(frames[i])
+                    width, height = img.size
+                    if height > total_height:
+                        # Resize image while maintaining ratio
+                        new_w = int(width * (total_height / height))
+                        img = img.resize((new_w, total_height), Image.BICUBIC)
+                    total_width += img.size[0]
+                    if hflip is not None and vid_idx in hflip:
+                        img = ImageOps.mirror(img)
+                    images.append(img)
 
         new_im = Image.new("RGB", (total_width, total_height))
-        curr_width = 0
-        for img in images:
-            new_im.paste(img, (curr_width, 0))
-            curr_width, _ = img.size
+
+        if vertical:
+            curr_height = 0
+            for img in images:
+                new_im.paste(img, (0, curr_height))
+                _, curr_height = img.size
+        else:
+            curr_width = 0
+            for img in images:
+                new_im.paste(img, (curr_width, 0))
+                curr_width, _ = img.size
 
         new_im = np.array(new_im) 
         new_im = new_im[:, :, ::-1].copy() 
@@ -118,5 +197,8 @@ if __name__ == "__main__":
         ind_start=args.ind_start,
         ind_end=args.ind_end,
         fps=args.fps,
-        add_text=args.add_text
+        add_text=args.add_text,
+        hflip=args.hflip,
+        vertical=args.vertical,
+        resize_max=args.resize_max
     )
