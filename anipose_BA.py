@@ -1048,7 +1048,6 @@ class CameraGroup:
         no_nan_counts = n_cams - nan_counts
         fixed_indices = no_nan_counts >= 2
 
-
         constraints = np.array(constraints)
         constraints_weak = np.array(constraints_weak)
 
@@ -1149,16 +1148,14 @@ class CameraGroup:
         # errors_reproj *= 0
         # return errors_reproj
         
-        errors_reproj *= 10000000
+        #errors_reproj *= 10000000
         # return errors_reproj
         # temporal constraint
         # First, fill in points
-        p3ds_filler = p3ds
         # return errors_reproj
-        filled_points[~fixed_indices] = p3ds_filler.reshape(filled_points[~fixed_indices].shape)
+        if np.isnan(filled_points).any():
+            filled_points[~fixed_indices] = p3ds.reshape(filled_points[~fixed_indices].shape)
         errors_smooth = np.diff(filled_points, n=n_deriv_smooth, axis=0).ravel() * scale_smooth
-
-        # errors_smooth *= 0
 
         return np.hstack(
             [errors_reproj, errors_smooth]
@@ -1168,12 +1165,7 @@ class CameraGroup:
         self, p2ds, n_deriv_smooth=1,
     ):
         n_cams, n_frames, n_joints, _ = p2ds.shape
-
         p2ds_flat = p2ds.reshape((n_cams, -1, 2))
-        point_indices = np.zeros(p2ds_flat.shape, dtype="int32")
-        for i in range(p2ds_flat.shape[1]):
-            point_indices[:, i] = i
-
         point_indices_3d = np.arange(n_frames * n_joints).reshape((n_frames, n_joints))
 
         nan_counts = np.sum(np.any(np.isnan(p2ds), axis=-1), axis=0)
@@ -1186,7 +1178,6 @@ class CameraGroup:
         
         n_errors_reproj = np.sum(good)
         n_errors_smooth = (n_frames - n_deriv_smooth) * n_joints * 3
-
         n_errors = (
             n_errors_reproj + n_errors_smooth
         )
@@ -1194,46 +1185,28 @@ class CameraGroup:
         n_params = n_3d
         n_params = np.sum(~fixed_indices) * 3
 
-        #n_errors = n_errors_reproj  #! forcing
+        A_sparse = dok_matrix((n_errors, n_params), dtype="int16") * 1
 
-        A_sparse = dok_matrix((n_errors, n_params), dtype="int16")
-        # constraints for reprojection errors
-        ix_reproj = np.arange(n_errors_reproj)
-        # For each (x,y,z) in 3D point
-        assert int(n_errors_reproj / n_cams / 2) - n_errors_reproj / n_cams / 2 == 0
-        for i in range(int(n_errors_reproj / n_cams / 2)):
-            for j in range(n_cams):
-                shift = j * n_errors_reproj / n_cams
-                # Rows i*2 and (i*2 + 1)
-                for k in range(3):
-                    A_sparse[i * 2 + shift, i * 3 + k] = 1
-                    A_sparse[i * 2 + 1 + shift, i * 3 + k] = 1
+        m = np.sum(~fixed_indices_flattened)
+        # Get indices
+        nonfixed_index_locations = np.argwhere(~fixed_indices)
 
-        # sparse constraints for smoothness in time
-        temporal_rows = point_indices_3d[fixed_indices]
+        for i in range(m):
+            frame, bp = nonfixed_index_locations[i]
+            # Fill in reprojection error indices
+            # i=0 --> columns 0:3, i=1 --> columns = 3:6
+            # i=0 --> rows 0:(n_cams*2)
+            A_sparse[(i * n_cams * 2):(i * n_cams * 2 + n_cams * 2), (i * 3):(i * 3 + 3)] = 1
+            # Fill in smoothness error indices
+            for j in range(2):
+                frame_new = frame + j
+                smooth_index_start = n_errors_reproj - 1 + (frame_new * n_joints * 3) + (bp * 3)
+                A_sparse[smooth_index_start: (smooth_index_start + 3), (i * 3):(i * 3 + 3)] = 1
+                if frame_new == 1:
+                    break
         
-        for i in range(int(n_params / 3)):  # For each 3D point to optimize
-            if i >= len(temporal_rows):
-                break
-            # We fill in previous frame (each column goes to two rows...
-            # ... except if column is associated with frame 0)
-            if (n_errors_reproj + temporal_rows[i] * 3) < A_sparse.shape[0]:
-                A_sparse[n_errors_reproj + temporal_rows[i] * 3, i] = 1
-                A_sparse[n_errors_reproj + temporal_rows[i] * 3 + 1, i + 1] = 1
-                A_sparse[n_errors_reproj + temporal_rows[i] * 3 + 2, i + 2] = 1
-
-            if temporal_rows[i] != 0 and (n_errors_reproj + temporal_rows[i - 1] * 3) < A_sparse.shape[0]:
-                A_sparse[n_errors_reproj + temporal_rows[i - 1] * 3, i] = 1
-                A_sparse[n_errors_reproj + temporal_rows[i - 1] * 3 + 1, i + 1] = 1
-                A_sparse[n_errors_reproj + temporal_rows[i - 1] * 3 + 2, i + 2] = 1
-            
-            if i + 1 < len(temporal_rows) and (n_errors_reproj + temporal_rows[i + 1] * 3) < A_sparse.shape[0]:
-                A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3, i] = 1
-                A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3 + 1, i + 1] = 1
-                A_sparse[n_errors_reproj + temporal_rows[i + 1] * 3 + 2, i + 2] = 1
-
         return A_sparse
-
+        
     def _initialize_params_triangulation(
         self, p3ds, constraints=[], constraints_weak=[]
     ):
@@ -1264,13 +1237,13 @@ class CameraGroup:
 
     def _jac_sparsity_triangulation(
         self, p2ds, constraints=[], constraints_weak=[], n_deriv_smooth=1
-    ):  
-        print('*******************JAC SPARSITY TRIANGULATE*************')
+    ):
         n_cams, n_frames, n_joints, _ = p2ds.shape
         n_constraints = len(constraints)
         n_constraints_weak = len(constraints_weak)
 
         p2ds_flat = p2ds.reshape((n_cams, -1, 2))
+
         point_indices = np.zeros(p2ds_flat.shape, dtype="int32")
         for i in range(p2ds_flat.shape[1]):
             point_indices[:, i] = i
@@ -1287,58 +1260,26 @@ class CameraGroup:
             n_errors_reproj + n_errors_smooth + n_errors_lengths + n_errors_lengths_weak
         )
 
-        print('n_errors_reproj: ', n_errors_reproj)
-        print('n_errors_smooth: ', n_errors_smooth)
-        
-
         n_3d = n_frames * n_joints * 3
         n_params = n_3d + n_constraints + n_constraints_weak
 
         point_indices_good = point_indices[good]
-        print('point_indices: ', point_indices.shape)
-        print('good: ', good.shape)
-        print('point_indices_good: ', point_indices_good[:20])
-        print('point_indices_good: ', point_indices_good[-20:])
-        print('point_indices_good: ', point_indices_good[5810:5910])
-
-        print('point_indices_good shape: ', point_indices_good.shape)
 
         A_sparse = dok_matrix((n_errors, n_params), dtype="int16")
-        print('A_sparse: ', A_sparse.shape)
 
         # constraints for reprojection errors
         ix_reproj = np.arange(n_errors_reproj)
-        print('ix_reproj shape: ', ix_reproj.shape)
-        print('----------reproj sparsity---------')
-
         for k in range(3):
-            print('ix_reproj \t\t  : ', (ix_reproj + 0)[5755:5764])
-            print('point_indices_good * 3 + k: ', (point_indices_good * 3 + k)[5755:5764])
             A_sparse[ix_reproj, point_indices_good * 3 + k] = 1
-        print('----------------------------------')
 
         # sparse constraints for smoothness in time
-        print('----------smooth sparsity---------')
         frames = np.arange(n_frames - n_deriv_smooth)
-        print('frames shape: ', frames.shape)
-        print('n_joints: ', n_joints)
-        print('n_deriv_smooth: ', n_deriv_smooth)
-        print('point_indices_3d shape: ', point_indices_3d.shape)
-        print('point_indices_3d: ', point_indices_3d)
-
         for j in range(n_joints):
             for n in range(n_deriv_smooth + 1):
-                print('n: ', n)
                 pa = point_indices_3d[frames, j]
                 pb = point_indices_3d[frames + n, j]
                 for k in range(3):
-                    print('**********')
-                    print('pa * 3 + k: ', (pa * 3 + k)[:10])
-                    print('pb * 3 + k: ', (pb * 3 + k)[:10])
                     A_sparse[n_errors_reproj + pa * 3 + k, pb * 3 + k] = 1
-                    print('**********')
-                    
-        print('------------------------------------')
 
         ## -- strong constraints --
         # joint lengths should change with joint lengths errors
@@ -1372,7 +1313,6 @@ class CameraGroup:
                 A_sparse[start + cix * n_frames + frames, pa * 3 + k] = 1
                 A_sparse[start + cix * n_frames + frames, pb * 3 + k] = 1
 
-        print('*******************************************')
         return A_sparse
 
     def _error_fun_triangulation(
