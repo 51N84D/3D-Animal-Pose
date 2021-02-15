@@ -16,20 +16,40 @@ extrinsics: # NOTE: len(x) = len(y) = len(z) = number of cameras
 bp_names: 
     - 'head'
     - 'chin_base'
+    - 'chin_1_4'
     - 'chin_mid'
+    - 'chin_3_4'
     - 'chin_end'
     - 'mid'
     - 'tail'
     - 'caudal_d'
     - 'caudal_v'
+    - 'worm_1'
+    - 'worm_2'
+    - 'worm_3'
+    - 'worm_4'
+    - 'worm_5'
 skeleton:
     - ["caudal_d", "tail"]
     - ["caudal_v", "tail"]
     - ["tail", "mid"]
     - ["mid", "head"]
     - ["head", "chin_base"]
-    - ["chin_base", "chin_mid"]
-    - ["chin_mid", "chin_end"]
+    - ["chin_base", "chin_1_4"]
+    - ["chin_1_4", "chin_mid"]
+    - ["chin_mid", "chin_3_4"]
+    - ["chin_3_4", "chin_end"]
+    - ["worm_1", "worm_2"]
+    - ["worm_2", "worm_3"]
+    - ["worm_3", "worm_4"]
+    - ["worm_4", "worm_5"]
+#    - ["caudal_d", "tail"]
+#    - ["caudal_v", "tail"]
+#    - ["tail", "mid"]
+#    - ["mid", "head"]
+#    - ["head", "chin_base"]
+#    - ["chin_base", "chin_mid"]
+#    - ["chin_mid", "chin_end"]
 #color_list:
 #    - "purple"
 #    - "green"
@@ -48,3 +68,11 @@ color_list:
     - "brown"
     - "orange"
     - "yellow"
+    - "chocolate"
+    - "peru"
+    - "olivedrab"
+    - "cyan"
+    - "lime"
+    - "violet"
+    - "darkorange"
+    

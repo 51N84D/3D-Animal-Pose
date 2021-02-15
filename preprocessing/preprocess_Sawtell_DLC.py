@@ -42,6 +42,15 @@ def get_data():
     # ).resolve()
     dlc_file = '/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv' # data_dir / "videoEOD_cropped000_tracking.csv"
     dlc_data = pd.read_csv(dlc_file)
+    
+    worm_colnames = dlc_data.columns[dlc_data.columns.str.contains('worm')]
+    dlc_data.columns = dlc_data.columns.str.replace('worm_right_', 'worm_1_right_')
+    dlc_data.columns = dlc_data.columns.str.replace('worm_front_', 'worm_1_')
+    dlc_data.columns = dlc_data.columns.str.replace('worm_right', 'worm_')
+    dlc_data.columns = dlc_data.columns.str.replace('worm_front', 'worm_')
+    
+
+    
 
     # points are (num_frames, 3 * num_bodyparts)
     dlc_points = np.asarray(dlc_data)[:, 1:]
@@ -72,7 +81,7 @@ def get_data():
     print(pts_array.shape)
 
     # Make Nans if low confidence:
-    pts_array[confidences < 0.5] = np.nan
+    pts_array[confidences < 0.3] = np.nan
     print("pts_array: ", pts_array.shape)
     
     # for now very manual: take every fifth row, for frames up to 25000
@@ -98,7 +107,9 @@ def get_data():
 
     # NOTE: Empty list keeps all bodyparts
     # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
-    bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
+    #bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
+    bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail", "worm"]
+
     # bp_to_keep = []
     
 
@@ -170,7 +181,7 @@ def get_data():
     info_dict["clean_point_indices"] = clean_point_indices
 
     # Get path images
-    multivew_images_dir = data_dir #/ "frames"
+    multivew_images_dir = data_dir / "chopped_frames"
     view_dirs = os.listdir(multivew_images_dir)
     # NOTE: assumes folders for each view are ordered the same as in image_settings.json
     # i.e. view_0 corresponds to height_lims[0]
