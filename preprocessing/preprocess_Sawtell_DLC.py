@@ -191,4 +191,5 @@ if __name__ == "__main__":
         data_dir=args.data_dir,
         img_settings_path=args.image_settings,
         dlc_file=args.dlc_file,
+        save_arrays=args.save_arrays
     )
