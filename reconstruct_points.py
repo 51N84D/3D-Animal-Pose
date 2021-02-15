@@ -210,10 +210,22 @@ if __name__ == "__main__":
         pts_2d_joints.shape[3],
     )
     pts_2d_filtered, clean_point_indices = clean_nans(pts_2d)
+    print("####################################")
+    print("entering vanilla bundle adjust...")
+    print("####################################")
+
     res, points_3d_init = cam_group.bundle_adjust(pts_2d_filtered)
 
     # Triangulate points
+    print("####################################")
+    print("entering triangulate_progressive...")
+    print("####################################")
+
     points_3d = cam_group.triangulate_progressive(pts_2d_joints)
+    print("####################################")
+    print("triangulation finished!")
+    print("####################################")
+
     if len(points_3d.shape) < 3:
         points_3d = points_3d.reshape(num_frames, num_bodyparts, 3)
     # Save points
