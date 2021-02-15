@@ -85,11 +85,13 @@ def get_data():
     print("pts_array: ", pts_array.shape)
     
     # for now very manual: take every fifth row, for frames up to 25000
-    downsampling = 5
-    max_frame = 25000
-    rows_to_use = np.concatenate([np.zeros(1), 
-                                np.arange(downsampling-1,max_frame,downsampling)]).astype('int32') # inds for rows of dlc
-    pts_array = pts_array[rows_to_use, :, :]
+    downsample = False
+    if downsample:
+        downsampling = 5
+        max_frame = 25000
+        rows_to_use = np.concatenate([np.zeros(1), 
+                                    np.arange(downsampling-1,max_frame,downsampling)]).astype('int32') # inds for rows of dlc
+        pts_array = pts_array[rows_to_use, :, :]
 
     # Get number of frames
     num_frames = pts_array.shape[0]

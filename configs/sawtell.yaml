@@ -1,5 +1,5 @@
-path_to_images: "/Users/danbiderman/Dropbox/Columbia/1.Dan/Paninski_Folder/Video_Datasets/Sawtell-data/20201102_Joao/chopped_frames" # Should be a folder containing subfolders with frames from each view
-path_to_points: "/Users/danbiderman/Dropbox/Columbia/1.Dan/Paninski_Folder/Video_Datasets/Sawtell-data/20201102_Joao/2d_points_array.npy" # Shape must be (num_cameras, num_frames, num_bodyparts, 2)
+path_to_images: "/Users/danbiderman/Dropbox/Columbia/1.Dan/Research/Paninski/Video_Datasets/Sawtell-data/20201102_Joao/chopped_frames" # Should be a folder containing subfolders with frames from each view
+path_to_points: "/Users/danbiderman/Dropbox/Columbia/1.Dan/Research/Paninski/Video_Datasets/Sawtell-data/20201102_Joao/2d_points_array.npy" # Shape must be (num_cameras, num_frames, num_bodyparts, 2)
 intrinsics:
     focal_length:
         focal_length_mm: 15
