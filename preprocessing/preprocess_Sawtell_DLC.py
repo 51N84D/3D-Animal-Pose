@@ -6,22 +6,16 @@ import sys
 import pandas as pd
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.resolve()))
-from utils.utils_IO import (
-    sorted_alphanumeric,
-)
 import commentjson
-from copy import deepcopy
+import argparse
 
 # ToDo: make more general!! especially paths.
 
 
-def get_data():
-    import h5py
-    
+def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False):
+
     # data_dir is e.g., Joao's folder with .json, folders per view, and a .csv dlc file
-    data_dir = Path(
-        "../../Video_Datasets/Sawtell-data/20201102_Joao"
-    ).resolve() # assuming you run from preprocessing folder
+    data_dir = Path(data_dir).resolve()  # assuming you run from preprocessing folder
     # filename = data_dir / "tank_dataset_5.h5"
     # f = h5py.File(filename, "r")
     # print("-------------DATASET INFO--------------")
@@ -33,24 +27,22 @@ def get_data():
     # print("skeleton_names: ", f["skeleton_names"])
     # print("----------------------------------------")
 
-    img_settings_file = data_dir / "image_settings.json"
-    img_settings = commentjson.load(open(str(img_settings_file), "r")) #ToDo: the path in the json doesn't make sense
+    img_settings = commentjson.load(
+        open(str(img_settings_path), "r")
+    )  # ToDo: the path in the json doesn't make sense
     num_cameras = len(img_settings["height_lims"])
 
     # data_dir = Path(
     #     "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking"
     # ).resolve()
-    dlc_file = '/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv' # data_dir / "videoEOD_cropped000_tracking.csv"
-    dlc_data = pd.read_csv(dlc_file)
-    
-    worm_colnames = dlc_data.columns[dlc_data.columns.str.contains('worm')]
-    dlc_data.columns = dlc_data.columns.str.replace('worm_right_', 'worm_1_right_')
-    dlc_data.columns = dlc_data.columns.str.replace('worm_front_', 'worm_1_')
-    dlc_data.columns = dlc_data.columns.str.replace('worm_right', 'worm_')
-    dlc_data.columns = dlc_data.columns.str.replace('worm_front', 'worm_')
-    
+    print('Reading CSV...')
+    dlc_data = pd.read_csv(dlc_file, nrows=1000)
 
-    
+    worm_colnames = dlc_data.columns[dlc_data.columns.str.contains("worm")]
+    dlc_data.columns = dlc_data.columns.str.replace("worm_right_", "worm_1_right_")
+    dlc_data.columns = dlc_data.columns.str.replace("worm_front_", "worm_1_")
+    dlc_data.columns = dlc_data.columns.str.replace("worm_right", "worm_")
+    dlc_data.columns = dlc_data.columns.str.replace("worm_front", "worm_")
 
     # points are (num_frames, 3 * num_bodyparts)
     dlc_points = np.asarray(dlc_data)[:, 1:]
@@ -78,19 +70,19 @@ def get_data():
 
     pts_array = np.concatenate((x_points, y_points), axis=-1)
 
-    print(pts_array.shape)
-
     # Make Nans if low confidence:
     pts_array[confidences < 0.3] = np.nan
-    print("pts_array: ", pts_array.shape)
-    
+
     # for now very manual: take every fifth row, for frames up to 25000
     downsample = False
     if downsample:
         downsampling = 5
         max_frame = 25000
-        rows_to_use = np.concatenate([np.zeros(1), 
-                                    np.arange(downsampling-1,max_frame,downsampling)]).astype('int32') # inds for rows of dlc
+        rows_to_use = np.concatenate(
+            [np.zeros(1), np.arange(downsampling - 1, max_frame, downsampling)]
+        ).astype(
+            "int32"
+        )  # inds for rows of dlc
         pts_array = pts_array[rows_to_use, :, :]
 
     # Get number of frames
@@ -109,29 +101,31 @@ def get_data():
 
     # NOTE: Empty list keeps all bodyparts
     # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
-    #bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
+    # bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
     bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail", "worm"]
 
     # bp_to_keep = []
-    
 
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
 
     new_skeleton_names = []
-    bodyparts = []
-    for idx, name in enumerate(skeleton_names): # was prev f["skeleton_names"] building on the labels data.
+    for idx, name in enumerate(
+        skeleton_names
+    ):  # was prev f["skeleton_names"] building on the labels data.
         if len(bp_to_keep) > 0:
             skip_bp = True
             for bp in bp_to_keep:
-                if bp == name.split("_")[0]: # bp == name.decode("UTF-8").split("_")[0]:
+                if (
+                    bp == name.split("_")[0]
+                ):  # bp == name.decode("UTF-8").split("_")[0]:
                     skip_bp = False
             if skip_bp:
                 continue
 
         new_skeleton_names.append(name)
         for view_name in view_names:
-            if view_name in name.split("_")[-1]:# name.decode("UTF-8").split("_")[-1]:
+            if view_name in name.split("_")[-1]:  # name.decode("UTF-8").split("_")[-1]:
                 multiview_idx_to_name[idx] = view_name
                 multiview_name_to_idx[view_name].append(idx)
 
@@ -139,106 +133,62 @@ def get_data():
         num_analyzed_body_parts = int(len(new_skeleton_names) / num_cameras)
 
     # (num views, num frames, num points per frame, 2)
-    multiview_pts_2d = np.empty(
+    pts_array_2d_joints = np.empty(
         shape=(num_cameras, pts_array.shape[0], num_analyzed_body_parts, 2)
     )
+
+    confidences_bp = np.empty(
+        shape=(num_cameras, pts_array.shape[0], num_analyzed_body_parts)
+    )
+
     for i, view_name in enumerate(view_names):
         # Select rows from indices
         view_indices = multiview_name_to_idx[view_name]
         view_points = pts_array[:, view_indices, :]
         view_points[:, :, 0] -= img_settings["width_lims"][i][0]
         view_points[:, :, 1] -= img_settings["height_lims"][i][0]
-        multiview_pts_2d[i, :, :, :] = view_points
+        pts_array_2d_joints[i, :, :, :] = view_points
 
-    pts_array_2d_joints = deepcopy(multiview_pts_2d)
+        confidences_bp[i, :, :] = confidences[:, view_indices]
 
-    print("multiview_pts_2d_joints: ", multiview_pts_2d.shape)
-    # Now, convert to (num views, num points * num frames, 2)
-    multiview_pts_2d = np.reshape(
-        multiview_pts_2d,
-        (
-            multiview_pts_2d.shape[0],
-            multiview_pts_2d.shape[1] * multiview_pts_2d.shape[2],
-            -1,
-        ),
-    )
-    multiview_pts_2d
-    assert multiview_pts_2d.shape[-1] == 2
-
-    num_points_all = multiview_pts_2d.shape[1]
-    # Clean up nans
-    count_nans = np.sum(np.isnan(multiview_pts_2d), axis=0)[:, 0]
-    nan_rows = count_nans > num_cameras - 2
-    # nan_rows = np.isnan(multiview_pts_2d).any(axis=-0).any(axis=-1)
-
-    pts_all_flat = np.arange(multiview_pts_2d.shape[1])
-    pts_array_2d = multiview_pts_2d[:, ~nan_rows, :]
-    clean_point_indices = pts_all_flat[~nan_rows]
-
-    info_dict = {}
-    info_dict["num_frames"] = num_frames
-    info_dict["num_analyzed_body_parts"] = num_analyzed_body_parts
-    info_dict["num_cameras"] = num_cameras
-    info_dict["num_points_all"] = num_points_all
-    info_dict["clean_point_indices"] = clean_point_indices
-
-    # Get path images
-    multivew_images_dir = data_dir / "chopped_frames"
-    view_dirs = os.listdir(multivew_images_dir)
-    # NOTE: assumes folders for each view are ordered the same as in image_settings.json
-    # i.e. view_0 corresponds to height_lims[0]
-
-    path_images = []
-    for i in range(num_cameras):
-        for view in view_dirs:
-            if str(i) in view:
-                view_images = os.listdir(multivew_images_dir / view)
-                view_images = sorted_alphanumeric(view_images)
-                view_images = [
-                    str(multivew_images_dir / Path(view) / i) for i in view_images
-                ]
-                path_images.append(view_images)
-
-    # Get image dimensions
-    from PIL import Image
-
-    img_heights = []
-    img_widths = []
-    for i in range(num_cameras):
-        img = Image.open(path_images[i][0])
-        width, height = img.size
-        img_heights.append(height)
-        img_widths.append(width)
-
-    # Get focal lengths
-    focal_lengths = []
-    focal_length_mm = 15
-    sensor_size = 12
-    for i in range(num_cameras):
-        focal_length = (
-            focal_length_mm * ((img_heights[i] ** 2 + img_widths[i] ** 2) ** (1 / 2))
-        ) / sensor_size
-
-        focal_lengths.append(focal_length)
+    points_path = data_dir / "2d_points_array.npy"
+    conf_path = data_dir / "2d_confidences_array.npy"
 
     # Write points
-    points_path = data_dir / '2d_points_array.npy'
-    np.save(points_path, pts_array_2d_joints)
+    if save_arrays:
+        np.save(points_path, pts_array_2d_joints)
+        np.save(conf_path, confidences_bp)
 
-    '''
-    return {
-        "img_width": img_widths,
-        "img_height": img_heights,
-        "pts_array_2d": multiview_pts_2d,
-        "pts_array_2d_filtered": pts_array_2d,
-        "pts_array_2d_joints": pts_array_2d_joints,
-        "info_dict": info_dict,
-        "path_images": path_images,
-        "focal_length": focal_lengths,
-        "bodypart_names": new_skeleton_names,
-    }
-    '''
+    return pts_array_2d_joints, confidences_bp
+
+
+def get_args():
+    parser = argparse.ArgumentParser(description="Sawtell preprocessing")
+    # dataset
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default="/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/20201102_Joao",
+    )
+    parser.add_argument(
+        "--image_settings",
+        type=str,
+        default="/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/20201102_Joao/image_settings.json",
+    )
+    parser.add_argument(
+        "--dlc_file",
+        type=str,
+        default="/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv",
+    )
+    parser.add_argument("--save_arrays", action="store_true")
+
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    get_data()
+    args = get_args()
+    get_data(
+        data_dir=args.data_dir,
+        img_settings_path=args.image_settings,
+        dlc_file=args.dlc_file,
+    )
