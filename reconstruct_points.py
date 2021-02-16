@@ -12,6 +12,7 @@ from tqdm import tqdm
 import cv2
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
+from utils.arr_utils import slice_high_confidence
 
 
 def get_args():
@@ -27,7 +28,9 @@ def get_args():
         nargs="+",
         help="sizes of points in each view",
     )
+    parser.add_argument("--num_ba_frames", default=1000, type=int, help="how many top confidence frames to use")
     parser.add_argument("--save_reprojections", action='store_true')
+    parser.add_argument("--dataset", type=str, help="dataset name for unique preprocessing")
 
     return parser.parse_args()
 
@@ -201,6 +204,16 @@ if __name__ == "__main__":
     config = experiment_data["config"]
     color_list = config.color_list
     F = get_F_geometry(cam_group)
+    
+    # load pts
+    if args.dataset == "Sawtell_Fish":
+        #ToDo: fix this call.
+        pts_2d_joints, confs = preprocessing.preprocess_Sawtell_DLC.get_data(data_dir, 
+                                                                             img_settings_path="../Video_Datasets/Sawtell-data/20201102_Joao/image_settings.json", 
+                                                                             dlc_file="d", 
+                                                                             save_arrays=False)
+        
+    pts_2d_high_conf = slice_high_confidence(pts_2d_joints, confs, args.num_BA_frames)
 
     # Bundle adjust points
     pts_2d_joints = experiment_data["points_2d_joints"]
