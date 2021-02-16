@@ -38,6 +38,7 @@ def get_args():
 def reproject_points(points_3d, cam_group):
 
     multivew_filled_points_2d = []
+    (num_frames, num_bodyparts, _) = points_3d.shape
 
     for cam in cam_group.cameras:
         points_2d = np.squeeze(cam.project(points_3d))
@@ -207,22 +208,29 @@ if __name__ == "__main__":
     
     # load pts
     if args.dataset == "Sawtell_Fish":
-        #ToDo: fix this call.
-        pts_2d_joints, confs = preprocessing.preprocess_Sawtell_DLC.get_data(data_dir="add", 
+        from preprocessing.preprocess_Sawtell_DLC import get_data
+        pts_2d_joints, confs = get_data(data_dir= "../Video_Datasets/Sawtell-data/20201102_Joao", 
                                                                              img_settings_path="../Video_Datasets/Sawtell-data/20201102_Joao/image_settings.json", 
-                                                                             dlc_file="add", 
+                                                                             dlc_file="/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv", 
                                                                              save_arrays=False)
         
     pts_2d_high_conf = slice_high_confidence(pts_2d_joints, confs, args.num_ba_frames)
-
-    # Bundle adjust points
-    pts_2d_joints = experiment_data["points_2d_joints"]
-    pts_2d = pts_2d_joints.reshape(
-        pts_2d_joints.shape[0],
-        pts_2d_joints.shape[1] * pts_2d_joints.shape[2],
-        pts_2d_joints.shape[3],
+    
+    pts_2d = pts_2d_high_conf.reshape(
+        pts_2d_high_conf.shape[0],
+        pts_2d_high_conf.shape[1] * pts_2d_high_conf.shape[2],
+        pts_2d_high_conf.shape[3],
     )
-    pts_2d_filtered, clean_point_indices = clean_nans(pts_2d)
+    
+    # # Bundle adjust points
+    # pts_2d_joints = experiment_data["points_2d_joints"]
+    # pts_2d = pts_2d_joints.reshape(
+    #     pts_2d_joints.shape[0],
+    #     pts_2d_joints.shape[1] * pts_2d_joints.shape[2],
+    #     pts_2d_joints.shape[3],
+    # )
+    # Some Nan's may still remain if the fraction of high_conf/total frames is closer to 1.
+    pts_2d_filtered, clean_point_indices = clean_nans(pts_2d) 
     print("####################################")
     print("entering vanilla bundle adjust...")
     print("####################################")
@@ -230,6 +238,8 @@ if __name__ == "__main__":
     res, points_3d_init = cam_group.bundle_adjust(pts_2d_filtered)
 
     # Triangulate points
+    
+    # ToDo: pts_2d_joints should be splitted into chunks, with e.g,. 10 parallel calls to triangulate_progressive.
     print("####################################")
     print("entering triangulate_progressive...")
     print("####################################")
@@ -242,12 +252,20 @@ if __name__ == "__main__":
     if len(points_3d.shape) < 3:
         points_3d = points_3d.reshape(num_frames, num_bodyparts, 3)
     # Save points
+    # ToDo: change paths to save in a designated folder
     points_dir = Path("./points").resolve()
     points_dir.mkdir(parents=True, exist_ok=True)
+    
+    # create reprojections
+    points_reproj = reproject_points(points_3d, cam_group)
+    
+    # ToDo: this should be reshaped into the original dlc format (e.g., just the relevant columns).
 
     df = points3d_arr_to_df(points_3d, config.bp_names)
     df.to_csv(points_dir / f"{Path(args.config).stem}_3d.csv")
     print("Finished saving points.")
+    
+    # ToDo: Dan will add a final repreoject_points() call and save a csv that looks like the original 2D one.
 
     if args.save_reprojections:
         save_reproj(points_3d, cam_group, pts_2d_joints, point_sizes, F, color_list)

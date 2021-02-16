@@ -36,7 +36,7 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False):
     #     "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking"
     # ).resolve()
     print('Reading CSV...')
-    dlc_data = pd.read_csv(dlc_file, nrows=1000)
+    dlc_data = pd.read_csv(dlc_file, nrows=1000) # ToDo: that's just for testing, remove.
 
     worm_colnames = dlc_data.columns[dlc_data.columns.str.contains("worm")]
     dlc_data.columns = dlc_data.columns.str.replace("worm_right_", "worm_1_right_")
