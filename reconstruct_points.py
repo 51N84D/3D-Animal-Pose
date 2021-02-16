@@ -208,12 +208,12 @@ if __name__ == "__main__":
     # load pts
     if args.dataset == "Sawtell_Fish":
         #ToDo: fix this call.
-        pts_2d_joints, confs = preprocessing.preprocess_Sawtell_DLC.get_data(data_dir, 
+        pts_2d_joints, confs = preprocessing.preprocess_Sawtell_DLC.get_data(data_dir="add", 
                                                                              img_settings_path="../Video_Datasets/Sawtell-data/20201102_Joao/image_settings.json", 
-                                                                             dlc_file="d", 
+                                                                             dlc_file="add", 
                                                                              save_arrays=False)
         
-    pts_2d_high_conf = slice_high_confidence(pts_2d_joints, confs, args.num_BA_frames)
+    pts_2d_high_conf = slice_high_confidence(pts_2d_joints, confs, args.num_ba_frames)
 
     # Bundle adjust points
     pts_2d_joints = experiment_data["points_2d_joints"]
