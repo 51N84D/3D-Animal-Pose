@@ -8,11 +8,12 @@ import pandas as pd
 sys.path.append(str(Path(__file__).resolve().parent.parent.resolve()))
 import commentjson
 import argparse
-
+from tqdm import tqdm
+from time import time
 # ToDo: make more general!! especially paths.
 
 
-def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False):
+def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False, chunksize=None):
 
     # data_dir is e.g., Joao's folder with .json, folders per view, and a .csv dlc file
     data_dir = Path(data_dir).resolve()  # assuming you run from preprocessing folder
@@ -35,8 +36,16 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False):
     # data_dir = Path(
     #     "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking"
     # ).resolve()
-    print('Reading CSV...')
-    dlc_data = pd.read_csv(dlc_file, nrows=1000) # ToDo: that's just for testing, remove.
+    print("Reading CSV...")
+    if chunksize is None:
+        dlc_data = pd.read_csv(
+            dlc_file, nrows=1000
+        )  # ToDo: that's just for testing, remove.
+    else:
+        dlc_data = pd.read_csv(
+            dlc_file, chunksize=chunksize, nrows=15000
+        ) 
+        dlc_data = pd.concat([i for i in tqdm(dlc_data)], ignore_index=True)
 
     worm_colnames = dlc_data.columns[dlc_data.columns.str.contains("worm")]
     dlc_data.columns = dlc_data.columns.str.replace("worm_right_", "worm_1_right_")
@@ -102,7 +111,9 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False):
     # NOTE: Empty list keeps all bodyparts
     # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
     # bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
-    bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail", "worm"]
+    #bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail", "worm"]
+    bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail"]
+
 
     # bp_to_keep = []
 
@@ -159,7 +170,7 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False):
         np.save(points_path, pts_array_2d_joints)
         np.save(conf_path, confidences_bp)
 
-    return pts_array_2d_joints, confidences_bp
+    return pts_array_2d_joints, confidences_bp, img_settings
 
 
 def get_args():
@@ -181,6 +192,7 @@ def get_args():
         default="/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv",
     )
     parser.add_argument("--save_arrays", action="store_true")
+    parser.add_argument("--chunksize", type=int)
 
     return parser.parse_args()
 
@@ -191,5 +203,6 @@ if __name__ == "__main__":
         data_dir=args.data_dir,
         img_settings_path=args.image_settings,
         dlc_file=args.dlc_file,
-        save_arrays=args.save_arrays
+        save_arrays=args.save_arrays,
+        chunksize=args.chunksize,
     )
