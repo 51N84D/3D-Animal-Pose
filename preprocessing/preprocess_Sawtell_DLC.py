@@ -43,7 +43,7 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False, chunksize
         )  # ToDo: that's just for testing, remove.
     else:
         dlc_data = pd.read_csv(
-            dlc_file, chunksize=chunksize, nrows=15000
+            dlc_file, chunksize=chunksize
         ) 
         dlc_data = pd.concat([i for i in tqdm(dlc_data)], ignore_index=True)
 
@@ -111,8 +111,8 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False, chunksize
     # NOTE: Empty list keeps all bodyparts
     # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
     # bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
-    #bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail", "worm"]
-    bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail"]
+    bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail", "worm"]
+    #bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail"]
 
 
     # bp_to_keep = []
