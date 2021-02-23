@@ -670,9 +670,9 @@ class CameraGroup:
             a = i * n_cam_params
             b = (i + 1) * n_cam_params
             #params[a : a + 3] = cam.init_rot
-            params[a + 3 : a + 6] = cam.init_trans
+            #params[a + 3 : a + 6] = cam.init_trans
             #Neglect distortion
-            params[a + 7] = 0
+            #params[a + 7] = 0
             focal_len = cam.get_focal_length()
             params[a + 6] = focal_len
             cam.set_params(params[a:b])
@@ -887,8 +887,6 @@ class CameraGroup:
             points, constraints, constraints_weak, n_deriv_smooth
         )
         
-        print('jac: ', jac.shape)
-
         opt2 = optimize.least_squares(
             self._error_fun_triangulation,
             x0=x0,
@@ -1361,7 +1359,6 @@ class CameraGroup:
 
         # temporal constraint
         errors_smooth = np.diff(p3ds, n=n_deriv_smooth, axis=0).ravel() * scale_smooth
-        print('np.diff(p3ds, n=n_deriv_smooth, axis=0): ', np.diff(p3ds, n=n_deriv_smooth, axis=0).shape)
         # joint length constraint
         errors_lengths = np.empty((n_constraints, n_frames), dtype="float64")
         for cix, (a, b) in enumerate(constraints):
