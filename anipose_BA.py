@@ -1062,8 +1062,6 @@ class CameraGroup:
             p3ds_intp, constraints, constraints_weak
         )
 
-        return p3ds_intp
-
         # Select 3D points to optimize
         x0 = x0.reshape(n_frames, n_joints, 3)
         x0 = x0[~fixed_indices].ravel()
