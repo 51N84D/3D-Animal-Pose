@@ -13,10 +13,10 @@ from time import time
 # ToDo: make more general!! especially paths.
 
 
-def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False, chunksize=None):
+def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
 
     # data_dir is e.g., Joao's folder with .json, folders per view, and a .csv dlc file
-    data_dir = Path(data_dir).resolve()  # assuming you run from preprocessing folder
+    #data_dir = Path(data_dir).resolve()  # assuming you run from preprocessing folder
     # filename = data_dir / "tank_dataset_5.h5"
     # f = h5py.File(filename, "r")
     # print("-------------DATASET INFO--------------")
@@ -28,9 +28,11 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False, chunksize
     # print("skeleton_names: ", f["skeleton_names"])
     # print("----------------------------------------")
 
+    '''
     img_settings = commentjson.load(
         open(str(img_settings_path), "r")
     )  # ToDo: the path in the json doesn't make sense
+    '''
     num_cameras = len(img_settings["height_lims"])
 
     # data_dir = Path(
@@ -80,7 +82,7 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False, chunksize
     pts_array = np.concatenate((x_points, y_points), axis=-1)
 
     # Make Nans if low confidence:
-    pts_array[confidences < 0.3] = np.nan
+    pts_array[confidences < 0.5] = np.nan
 
     # for now very manual: take every fifth row, for frames up to 25000
     downsample = False
@@ -162,6 +164,7 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False, chunksize
 
         confidences_bp[i, :, :] = confidences[:, view_indices]
 
+    '''
     points_path = data_dir / "2d_points_array.npy"
     conf_path = data_dir / "2d_confidences_array.npy"
 
@@ -169,7 +172,7 @@ def get_data(data_dir, img_settings_path, dlc_file, save_arrays=False, chunksize
     if save_arrays:
         np.save(points_path, pts_array_2d_joints)
         np.save(conf_path, confidences_bp)
-
+    '''
     return pts_array_2d_joints, confidences_bp, img_settings
 
 
@@ -200,7 +203,6 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
     get_data(
-        data_dir=args.data_dir,
         img_settings_path=args.image_settings,
         dlc_file=args.dlc_file,
         save_arrays=args.save_arrays,

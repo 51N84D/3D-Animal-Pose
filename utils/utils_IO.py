@@ -240,28 +240,46 @@ def sorted_alphanumeric(data):
     return sorted(data, key=alphanum_key)
 
 
-def write_video(image_dir, out_file, fps=5):
-    im_list = os.listdir(image_dir)
-    im_list = sorted_alphanumeric(im_list)
-    # im_list.sort(key=lambda x: int(x.split(".")[0]))
-    if ".DS_Store" in im_list:
-        im_list.remove(".DS_Store")
-
+def write_video(
+    frames=None, image_dir=None, out_file="./out.mp4", fps=5, add_text=False
+):
     img_array = []
 
-    for filename in im_list:
-        img = cv2.imread(os.path.join(image_dir, filename))
-        height, width, layers = img.shape
-        size = (width, height)
-        img_array.append(img)
-    
+    if frames is not None:
+        im_list = frames
+        for img in im_list:
+            height, width, layers = img.shape
+            size = (width, height)
+            img_array.append(img)
+
+    if image_dir is not None:
+        im_list = os.listdir(image_dir)
+        im_list = sorted_alphanumeric(im_list)
+
+        if ".DS_Store" in im_list:
+            im_list.remove(".DS_Store")
+
+        for filename in im_list:
+            img = cv2.imread(os.path.join(image_dir, filename))
+            height, width, layers = img.shape
+            size = (width, height)
+            img_array.append(img)
+
     out = cv2.VideoWriter(
-        filename=out_file, fourcc=cv2.VideoWriter_fourcc("m", "p", "4", "v"), fps=fps, frameSize=size
+        filename=out_file,
+        fourcc=cv2.VideoWriter_fourcc("m", "p", "4", "v"),
+        fps=fps,
+        frameSize=size,
     )  # 15 fps
 
     cv2.VideoWriter()
+    font = cv2.FONT_HERSHEY_SIMPLEX
 
     for i in range(len(img_array)):
+        if add_text:
+            cv2.putText(
+                img_array[i], f"{i}", (10, 30), font, 1, (0, 0, 255), 1, cv2.LINE_AA
+            )
         out.write(img_array[i])
     out.release()
 
@@ -310,7 +328,7 @@ def combine_images(images=[], equal_size=False):
             if num_pixels < min_num_pixels:
                 min_num_pixels = num_pixels
                 min_view = i
-        
+
         new_h = images[min_view].shape[0]
         new_w = images[min_view].shape[1]
 

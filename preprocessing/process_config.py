@@ -4,9 +4,24 @@ from addict import Dict
 import numpy as np
 import re
 import os
-from PIL import Image
+import sys
+import pandas as pd
+from tqdm import tqdm
+
+sys.path.append(str(Path(__file__).resolve().parent.parent.resolve()))
+import cv2
 from anipose_BA import CameraGroup, Camera
-import warnings
+import argparse
+
+
+def get_args():
+    parser = argparse.ArgumentParser(description="Process config")
+    # dataset
+    parser.add_argument("--path_to_yaml", type=str, required=True)
+    parser.add_argument("--csv_type", type=str, required=True)
+
+    return parser.parse_args()
+
 
 def convert_to_float(frac_str):
     try:
@@ -41,69 +56,98 @@ def sorted_nicely(l):
     return sorted(l, key=alphanumeric_key)
 
 
-def read_yaml(path_to_yaml, frame_to_skip=None):
+def process_dlc_csv(path_to_csv, bp_to_keep=None, lh_thresh=0.9):
+    points_df = pd.read_csv(path_to_csv, header=[0, 1, 2], chunksize=10000)
+    points_df = pd.concat([i for i in tqdm(points_df)], ignore_index=True)
+
+    points_and_confs = points_df.values[:, 1:]
+    num_bodyparts = int(((points_df.columns.shape[0]) - 1) / 3)
+
+    points_arr = np.empty((points_and_confs.shape[0], num_bodyparts, 2))
+    confs = np.empty((points_and_confs.shape[0], num_bodyparts))
+    for i in range(num_bodyparts):
+        x = points_and_confs[:, 3 * i]
+        y = points_and_confs[:, 3 * i + 1]
+        lh = points_and_confs[:, 3 * i + 2]
+        points_arr[:, i, 0] = x
+        points_arr[:, i, 1] = y
+        confs[:, i] = lh
+
+    points_arr[confs < lh_thresh] = np.nan
+    return points_arr, confs
+
+
+def read_yaml(path_to_yaml, csv_type):
     assert isinstance(path_to_yaml, str)
     path_to_yaml = Path(path_to_yaml)
     with open(path_to_yaml, "r") as f:
         config = Dict(yaml.safe_load(f))
 
-    # Get points
-    points_2d_joints = np.load(config.path_to_points)
-    if config.path_to_likelihoods:
-        likelihoods = np.load(config.path_to_likelihoods)
+    assert csv_type in ["dlc", "sawtell"]
+
+    path_to_csvs = config.path_to_csv
+    path_to_videos = config.path_to_videos
+
+    point_sizes = config.point_sizes
+
+    if config.mirrored:
+        assert len(path_to_csvs) == 1
+        assert config.image_limits
+
+    assert len(path_to_csvs) == len(path_to_videos)
+
+    if csv_type == "dlc":
+        points_2d_joints = []
+        likelihoods = []
+        for csv_file_path in path_to_csvs:
+            curr_points, curr_likelihoods = process_dlc_csv(csv_file_path)
+            points_2d_joints.append(curr_points)
+            likelihoods.append(curr_likelihoods)
+        points_2d_joints = np.asarray(points_2d_joints)
+        likelihoods = np.asarray(likelihoods)
+
+    elif csv_type == "sawtell":
+        from preprocessing.preprocess_Sawtell_DLC import get_data
+
+        assert config.mirrored
+
+        img_settings = config.image_limits
+        points_2d_joints, likelihoods, img_settings = get_data(
+            img_settings=img_settings,
+            dlc_file=path_to_csvs[0],
+            save_arrays=False,
+            chunksize=10000,
+        )
     else:
-        likelihoods = np.empty((points_2d_joints.shape[0], points_2d_joints.shape[1], points_2d_joints.shape[2]))
-        likelihoods[:] = np.nan
-        
+        raise ValueError(f"csv_type {csv_type} is invalid.")
+
     num_cams = points_2d_joints.shape[0]
     num_frames = points_2d_joints.shape[1]
     num_bodyparts = points_2d_joints.shape[2]
 
-    # Get image paths and dimensions
-    path_to_views = Path(config.path_to_images).resolve()
-    views_dirs = sorted_nicely(os.listdir(path_to_views))
-    
-    assert num_cams == len(
-        views_dirs
-    ), "Mismatch between number of views in points, and number of views in frames path"
-
-    frame_paths = []
     image_heights = []
     image_widths = []
 
-    for view in views_dirs:
-        view_path = Path(path_to_views / view)
-        view_frames = sorted_nicely(os.listdir(view_path))
-        view_frames = [view_path / i for i in view_frames]
-        if num_frames != len(view_frames):
-            if num_frames - 1 == len(view_frames):
-                
-                assert frame_to_skip is not None, """Mismatch between number of frames in points and number of frames;  
-                specify which frame to skip (e.g --skip_frame -1 or --skip_frame 0)"""
-                
-                if frame_to_skip == 0:
-                    points_2d_joints = points_2d_joints[:, 1:, :, :]
-                    likelihoods = likelihoods[:, 1:, :]
-                elif frame_to_skip == -1:
-                    points_2d_joints = points_2d_joints[:, :-1, :, :]
-                    likelihoods = likelihoods[:, :-1, :]
-
-                else:
-                    points_2d_joints = points_2d_joints[:, :frame_to_skip, frame_to_skip:, :, :]
-                    likelihoods = likelihoods[:, :frame_to_skip, frame_to_skip:, :]
-
-                num_frames -= 1
-            else:
-                warnings.warn("Mismatch between number of frames in points and number of frames")
-
-        frame_paths.append(view_frames)
-
-        # Select a random frame and read the image to get dimensions
-        idx = np.random.choice(len(view_frames))
-        img = Image.open(view_frames[idx])
-        width, height = img.size
-        image_heights.append(height)
-        image_widths.append(width)
+    if config.mirrored:
+        vid = path_to_videos[0]
+        cap = cv2.VideoCapture(str(vid))
+        success, image = cap.read()
+        total_height, total_width, layers = image.shape
+        for i in range(num_cams):
+            sub_height, sub_width, layers = image[
+                config.image_limits["height_lims"][i][0]: config.image_limits["height_lims"][i][1],
+                config.image_limits["width_lims"][i][0]: config.image_limits["width_lims"][i][1],
+                :,
+            ].shape
+            image_heights.append(sub_height)
+            image_widths.append(sub_width)
+    else:
+        for vid in path_to_videos:
+            cap = cv2.VideoCapture(str(vid))
+            success, image = cap.read()
+            height, width, layers = image.shape
+            image_heights.append(height)
+            image_widths.append(width)
 
     # Get focal lengths
     focal_lengths = []
@@ -152,11 +196,20 @@ def read_yaml(path_to_yaml, frame_to_skip=None):
         "config": config,
         "points_2d_joints": points_2d_joints,
         "likelihoods": likelihoods,
-        "frame_paths": frame_paths,
         "num_cams": num_cams,
         "num_frames": num_frames,
         "num_bodyparts": num_bodyparts,
         "image_heights": image_heights,
         "image_widths": image_widths,
         "focal_length": focal_lengths,
+        "video_paths": path_to_videos,
+        "point_sizes": point_sizes,
+        "img_settings": config.image_limits,
+        "image_heights": image_heights,
+        "image_widths": image_widths
     }
+
+
+if __name__ == "__main__":
+    args = get_args()
+    experiment_data = read_yaml(args.path_to_yaml, args.csv_type)

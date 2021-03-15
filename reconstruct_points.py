@@ -1,12 +1,13 @@
 from pathlib import Path
+import sys
+
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent.resolve()))
 import argparse
 from preprocessing.process_config import read_yaml
 from utils.utils_BA import clean_nans
 import numpy as np
 from utils.points_to_dataframe import points3d_arr_to_df
-from utils.utils_IO import (
-    combine_images,
-)
+from utils.utils_IO import combine_images, write_video
 from utils.utils_plotting import draw_circles, drawLine, skew
 from tqdm import tqdm
 import cv2
@@ -15,48 +16,51 @@ from scipy.spatial.transform import Rotation as R
 from utils.arr_utils import slice_high_confidence
 import multiprocessing as mp
 import time
+from preprocessing.preprocess_Sawtell_DLC import get_data
+from functools import partial
+from scipy import signal
 
 
 def get_args():
     parser = argparse.ArgumentParser(description="3d reconstruction")
 
     # dataset
-    parser.add_argument("--config", type=str, default="./configs/sawtell.yaml")
-    parser.add_argument("--skip_frame", default=None, type=int, help="frame to skip")
-    parser.add_argument(
-        "--point_sizes",
-        default=7,
-        type=int,
-        nargs="+",
-        help="sizes of points in each view",
-    )
+    parser.add_argument("--config", type=str)
+    parser.add_argument("--output_dir", type=str, required=True)
+
     parser.add_argument(
         "--num_ba_frames",
-        default=1000,
+        default=5000,
         type=int,
         help="how many top confidence frames to use",
     )
-    parser.add_argument("--save_reprojections", action="store_true")
-    parser.add_argument(
-        "--dataset", type=str, help="dataset name for unique preprocessing"
-    )
-    parser.add_argument("--chunksize", type=int, default=10000)
     parser.add_argument(
         "--num_triang_frames",
         type=int,
-        default=2000,
+        default=1000,
         help="Number of frames per partition for triangulation",
     )
+
     parser.add_argument(
-        "--video_path",
-        type=str,
-        default="/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated.avi",
+        "--downsample",
+        type=int,
+        default=1,
+        help="Downsampling for plotting",
     )
 
-    parser.add_argument("--start_idx", type=int, default=0)
-    parser.add_argument("--num_save_frames", type=int, default=0)
-    parser.add_argument("--downsample", type=int, default=1)
+    parser.add_argument(
+        "--csv_type",
+        type=str,
+        default="dlc",
+        help="Format of CSV in config",
+    )
 
+    parser.add_argument(
+        "--save_bad_frames",
+        action="store_true",
+        help="Save frames with high reprojection errors",
+    )
+    # -------------------- Optional Dataset-dependent arguments -----------------------
     return parser.parse_args()
 
 
@@ -85,8 +89,10 @@ def save_reproj(
     plot_dir,
     og_dims=None,
     img_settings=None,
+    write_frames=False,
 ):
     """Write parameters to file"""
+    reproj_frames = []
     plot_dir = Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
     for frame_i in tqdm(range(points_2d_og.shape[1])):
@@ -104,7 +110,10 @@ def save_reproj(
         else:
             assert img_settings is not None
             combined_proj = combine_images_og(reproj_images, og_dims, img_settings)
-        cv2.imwrite(str(plot_dir / f"reproj_{frame_i}.jpg"), combined_proj)
+        if write_frames:
+            cv2.imwrite(str(plot_dir / f"reproj_{frame_i}.jpg"), combined_proj)
+        reproj_frames.append(combined_proj)
+    return reproj_frames
 
 
 def combine_images_og(images, og_dims, config):
@@ -125,6 +134,11 @@ def filter_zero_view_points(points_2d_og):
     return np.all(np.any(np.isnan(points_2d_og), axis=-1), axis=0)
 
 
+def filter_view_points(points_2d_og):
+    num_views = points_2d_og.shape[0]
+    return np.sum(np.any(np.isnan(points_2d_og), axis=-1), axis=0) > (num_views - 2)
+
+
 def get_reproject_images(
     points_2d_reproj,
     points_2d_og,
@@ -135,8 +149,13 @@ def get_reproject_images(
     i=0,
     is_arr=True,
     plot_epipolar=False,
+    filter_points=False,
 ):
-    points_filter = filter_zero_view_points(points_2d_og)
+    if len(path_images) > 2:
+        points_filter = filter_view_points(points_2d_og)
+
+    else:
+        points_filter = filter_zero_view_points(points_2d_og)
 
     images = []
     # For each camera
@@ -144,7 +163,7 @@ def get_reproject_images(
         cam1_points_2d_og = points_2d_og[0, i, :, :]
 
         if is_arr:
-            img_path = path_images[i][cam_num]
+            img_path = path_images[cam_num][i]
             img = img_path
         else:
             img_path = path_images[cam_num][i]
@@ -174,17 +193,17 @@ def get_reproject_images(
 
         draw_circles(
             img,
-            curr_points_2d_og.astype(np.int32),
+            points_filled.astype(np.int32),
             color_list,
-            point_size=point_sizes[cam_num],
+            point_size=point_sizes[cam_num] * 2,
+            marker_type="cross",
         )
 
         draw_circles(
             img,
-            points_filled.astype(np.int32),
+            curr_points_2d_og.astype(np.int32),
             color_list,
-            point_size=point_sizes[cam_num] * 4,
-            marker_type="cross",
+            point_size=point_sizes[cam_num],
         )
 
         draw_circles(
@@ -257,7 +276,7 @@ def get_F_geometry(cam_group):
     return F_all
 
 
-def triangulate_serial(points_3d, points_2d_split):
+def triangulate_serial(points_3d, points_2d_split, cam_group):
     subset_length = points_2d_split[0].shape[1]
     for i, points_2d_subset in enumerate(points_2d_split):
         subset_points_3d = cam_group.triangulate_progressive(points_2d_subset)
@@ -267,26 +286,26 @@ def triangulate_serial(points_3d, points_2d_split):
     return points_3d
 
 
-def triangulate_multiprocess(points_3d, points_2d_split):
-    # points_3d = np.empty((pts_2d_joints.shape[1], pts_2d_joints.shape[2], 3))
+def triangulate_multiprocess(points_3d, points_2d_split, cam_group):
+    # points_3d = np.empty((points_2d_joints.shape[1], points_2d_joints.shape[2], 3))
     manager = mp.Manager()
     points_3d_list = manager.list()
     subset_length = points_2d_split[0].shape[1]
     p = mp.Pool(processes=mp.cpu_count() - 1)
+    func = partial(triangulate_subsets, cam_group)
     iter_list = [
         (points_3d_list, i, points_2d_subset, subset_length)
         for i, points_2d_subset in enumerate(points_2d_split)
     ]
-
-    points_3d_list = p.map(triangulate_subsets, iter_list)
+    points_3d_list = p.map(func, iter_list)
     points_3d = merge_triang_results(points_3d_list, points_3d, subset_length)
 
     return points_3d
 
 
-def triangulate_subsets(iter_list):
+def triangulate_subsets(cam_group, iter_list):
     points_3d_list, i, points_2d_subset, subset_length = iter_list
-    subset_points_3d = cam_group.triangulate_optim(points_2d_subset)
+    subset_points_3d = cam_group.triangulate_progressive(points_2d_subset)
     return (subset_points_3d, i)
 
 
@@ -333,9 +352,9 @@ def cut_frames(frames, config):
     width_lims = config["width_lims"]
     views = len(width_lims)
     new_frames = []
-    for frame in frames:
+    for view_idx in range(views):
         frame_views = []
-        for view_idx in range(views):
+        for frame in frames:
             frame_views.append(
                 frame[
                     height_lims[view_idx][0] : height_lims[view_idx][1],
@@ -348,67 +367,74 @@ def cut_frames(frames, config):
     return new_frames
 
 
-if __name__ == "__main__":
-    args = get_args()
-    experiment_data = read_yaml(args.config, args.skip_frame)
+def reconstruct_points(
+    config,
+    output_dir,
+    num_ba_frames=5000,
+    num_triang_frames=1000,
+    downsample=1,
+    csv_type="dlc",
+    chunksize=10000,
+    save_bad_frames=True,
+):
+    experiment_data = read_yaml(config, csv_type=csv_type)
     cam_group = experiment_data["cam_group"]
     num_frames = experiment_data["num_frames"]
     num_bodyparts = experiment_data["num_bodyparts"]
     config = experiment_data["config"]
-    focal_length = experiment_data["focal_length"]
-    path_images = experiment_data["frame_paths"]
     num_cameras = experiment_data["num_cams"]
-    point_sizes = args.point_sizes
+    point_sizes = experiment_data["point_sizes"]
     if isinstance(point_sizes, int):
         point_sizes = [point_sizes] * num_cameras
+
     config = experiment_data["config"]
     color_list = config.color_list
     F = get_F_geometry(cam_group)
+    confs = experiment_data["likelihoods"]
+    points_2d_joints = experiment_data["points_2d_joints"]
+    img_settings = experiment_data["img_settings"]
+    video_paths = experiment_data["video_paths"]
+    image_heights = experiment_data["image_heights"]
+    image_widths = experiment_data["image_widths"]
 
-    # load pts
-    if args.dataset == "Sawtell_Fish":
-        from preprocessing.preprocess_Sawtell_DLC import get_data
+    output_dir = Path(output_dir).resolve()
 
-        pts_2d_joints, confs, img_settings = get_data(
-            data_dir="./data/Sawtell-data/20201102_Joao",
-            img_settings_path="./data/Sawtell-data/20201102_Joao/image_settings.json",
-            dlc_file="/Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv",
-            save_arrays=False,
-            chunksize=args.chunksize,
-        )
+    if points_2d_joints.shape[0] > 2:
+        points_filter = filter_view_points(points_2d_joints)
+
     else:
-        pts_2d_joints = experiment_data['points_2d_joints']
-    assert (args.start_idx + args.num_save_frames) < pts_2d_joints.shape[1]
+        points_filter = filter_zero_view_points(points_2d_joints)
 
-    num_high_conf = pts_2d_joints.shape[1] // 2
-    if num_high_conf < args.num_ba_frames:
-        num_high_conf = args.num_ba_frames
-    pts_2d_high_conf = slice_high_confidence(pts_2d_joints, confs, num_high_conf)
+    # Select the top 50% frames with highest likelihood
+    num_high_conf = points_2d_joints.shape[1] // 2
+    if num_high_conf < num_ba_frames:
+        num_ba_frames = num_high_conf
+    pts_2d_high_conf = slice_high_confidence(points_2d_joints, confs, num_high_conf)
 
     # Randomly subsample
     pts_2d_high_conf_samples = pts_2d_high_conf[
         :,
-        np.random.choice(pts_2d_high_conf.shape[1], args.num_ba_frames, replace=False),
+        np.random.choice(pts_2d_high_conf.shape[1], num_ba_frames, replace=False),
         :,
         :,
     ]
-    # args.num_ba_frames
+    # num_ba_frames
 
-    pts_2d = pts_2d_high_conf_samples.reshape(
+    pts_2d_ba = pts_2d_high_conf_samples.reshape(
         pts_2d_high_conf_samples.shape[0],
         pts_2d_high_conf_samples.shape[1] * pts_2d_high_conf_samples.shape[2],
         pts_2d_high_conf_samples.shape[3],
     )
 
     # #      adjust points
-    # pts_2d_joints = experiment_data["points_2d_joints"]
-    # pts_2d = pts_2d_joints.reshape(
-    #     pts_2d_joints.shape[0],
-    #     pts_2d_joints.shape[1] * pts_2d_joints.shape[2],
-    #     pts_2d_joints.shape[3],
+    # points_2d_joints = experiment_data["points_2d_joints"]
+    # pts_2d = points_2d_joints.reshape(
+    #     points_2d_joints.shape[0],
+    #     points_2d_joints.shape[1] * points_2d_joints.shape[2],
+    #     points_2d_joints.shape[3],
     # )
     # Some Nan's may still remain if the fraction of high_conf/total frames is closer to 1.
-    pts_2d_filtered, clean_point_indices = clean_nans(pts_2d)
+    pts_2d_filtered, clean_point_indices = clean_nans(pts_2d_ba)
     print("####################################")
     print("entering vanilla bundle adjust...")
     print("####################################")
@@ -417,29 +443,29 @@ if __name__ == "__main__":
 
     # Triangulate points
 
-    # ToDo: pts_2d_joints should be splitted into chunks, with e.g,. 10 parallel calls to triangulate_progressive.
+    # ToDo: points_2d_joints should be splitted into chunks, with e.g,. 10 parallel calls to triangulate_progressive.
     print("####################################")
     print("entering triangulate_progressive...")
     print("####################################")
 
-    num_partition = int(pts_2d_joints.shape[1] / args.num_triang_frames)
-    r = pts_2d_joints.shape[1] - (args.num_triang_frames * num_partition)
+    num_partition = int(points_2d_joints.shape[1] / num_triang_frames)
+    r = points_2d_joints.shape[1] - (num_triang_frames * num_partition)
     if r > 0:
         points_2d_split = np.split(
-            pts_2d_joints[:, : args.num_triang_frames * num_partition, :, :],
+            points_2d_joints[:, : num_triang_frames * num_partition, :, :],
             num_partition,
             axis=1,
         )
         points_2d_split.append(
-            pts_2d_joints[:, args.num_triang_frames * num_partition :, :, :]
+            points_2d_joints[:, num_triang_frames * num_partition :, :, :]
         )
     else:
-        points_2d_split = np.split(pts_2d_joints, num_partition, axis=1)
+        points_2d_split = np.split(points_2d_joints, num_partition, axis=1)
 
-    points_3d = np.empty((pts_2d_joints.shape[1], pts_2d_joints.shape[2], 3))
+    points_3d = np.empty((points_2d_joints.shape[1], points_2d_joints.shape[2], 3))
 
     start_time = time.time()
-    points_3d_mp = triangulate_multiprocess(points_3d, points_2d_split)
+    points_3d = triangulate_multiprocess(points_3d, points_2d_split, cam_group)
     end_time = time.time()
 
     print("triangulation time: ", end_time - start_time)
@@ -452,8 +478,7 @@ if __name__ == "__main__":
         points_3d = points_3d.reshape(num_frames, num_bodyparts, 3)
     # Save points
     # ToDo: change paths to save in a designated folder
-    points_dir = Path("./points").resolve()
-    points_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # create reprojections
     points_reproj = reproject_points(points_3d, cam_group)
@@ -461,39 +486,123 @@ if __name__ == "__main__":
     # ToDo: this should be reshaped into the original dlc format (e.g., just the relevant columns).
 
     df = points3d_arr_to_df(points_3d, config.bp_names)
-    df.to_csv(points_dir / f"{Path(args.config).stem}_3d.csv")
+    df.to_csv(output_dir / "points_3d.csv")
     print("Finished saving points.")
 
     # ToDo: Dan will add a final repreoject_points() call and save a csv that looks like the original 2D one.
 
     points_2d_reproj = reproject_points(points_3d, cam_group)
 
-    indices = np.arange(
-        start=args.start_idx,
-        stop=args.start_idx + args.num_save_frames,
-        step=args.downsample,
-    )
-
+    frame_indices = np.arange(points_2d_joints.shape[1], step=downsample)
+    
     print("####################################")
     print("extracting frames")
     print("####################################")
 
-    frames = extract_frames(indices, args.video_path)
-    og_dims = frames[0].shape
-    frames = cut_frames(frames, img_settings)
+    if config.mirrored:
+        frames = extract_frames(frame_indices, video_paths[0])
+        og_dims = frames[0].shape
+        frames = cut_frames(frames, img_settings)
+    else:
+        og_dims = None
+        img_settings = None
+        frames = []
+        for vid_path in video_paths:
+            frames.append(extract_frames(frame_indices, vid_path))
 
-    if args.save_reprojections:
-        save_reproj(
-            points_2d_reproj[:, indices, :, :],
-            pts_2d_joints[:, indices, :, :],
-            cam_group,
-            point_sizes,
-            F,
-            color_list,
-            frames,
-            "./reprojections",
-            og_dims,
-            img_settings,
+    reproj_frames = save_reproj(
+        points_2d_reproj[:, frame_indices, :, :],
+        points_2d_joints[:, frame_indices, :, :],
+        cam_group,
+        point_sizes,
+        F,
+        color_list,
+        frames,
+        output_dir / "reprojections",
+        og_dims,
+        img_settings,
+    )
+    write_video(
+        frames=reproj_frames,
+        out_file=str(output_dir / "reprojections.mov"),
+        fps=10,
+        add_text=True,
+    )
+
+    #-------------Get reprojection errors-----------------
+
+    # Getting frames with high reprojection error
+
+    for i in range(points_2d_reproj.shape[0]):
+        points_2d_reproj[i] = np.mod(
+            points_2d_reproj[i],
+            np.asarray([image_widths[i], image_heights[i]])[
+                np.newaxis, np.newaxis, np.newaxis, :
+            ],
         )
 
-    # Write frames
+    reprojection_errors = np.abs(points_2d_reproj - points_2d_joints)
+
+    average_reproj_errors = np.nanmean(
+        np.nanmean(np.nanmean(reprojection_errors, axis=0), axis=-1), axis=-1
+    )
+
+    plt.hist(average_reproj_errors, bins=100)
+    plt.show()
+    bad_reproj_indices = np.where(average_reproj_errors > 2)[0]
+    frames_filter = np.all(points_filter, axis=-1)
+    bad_reproj_indices = np.where(~frames_filter[bad_reproj_indices])[0]
+    #-------------------------------------------------------
+    print("Writing bad frames...")
+    if config.mirrored:
+        frames = extract_frames(bad_reproj_indices, video_paths[0])
+        og_dims = frames[0].shape
+        frames = cut_frames(frames, img_settings)
+    else:
+        frames = []
+        for vid_path in video_paths:
+            frames.append(extract_frames(bad_reproj_indices, vid_path))
+
+    reproj_frames_bad = save_reproj(
+        points_2d_reproj[:, bad_reproj_indices, :, :],
+        points_2d_joints[:, bad_reproj_indices, :, :],
+        cam_group,
+        point_sizes,
+        F,
+        color_list,
+        frames,
+        output_dir / "bad_reprojections",
+        og_dims,
+        img_settings,
+        write_frames=True,
+    )
+    write_video(
+        frames=reproj_frames_bad,
+        out_file=str(output_dir / "bad_reprojections.mov"),
+        fps=10,
+        add_text=True,
+    )
+
+    print("Writing sorted frames...")
+
+    reproj_sort_indices = np.argsort(average_reproj_errors)[::-1]
+    reproj_frames_sorted = list(np.asarray(reproj_frames)[reproj_sort_indices])
+    write_video(
+        frames=reproj_frames_sorted,
+        out_file=str(output_dir / "reprojections_sorted.mov"),
+        fps=10,
+        add_text=False,
+    )
+    
+
+if __name__ == "__main__":
+    args = get_args()
+    reconstruct_points(
+        config=args.config,
+        output_dir=args.output_dir,
+        num_ba_frames=args.num_ba_frames,
+        num_triang_frames=args.num_triang_frames,
+        downsample=args.downsample,
+        csv_type=args.csv_type,
+        save_bad_frames=args.save_bad_frames,
+    )

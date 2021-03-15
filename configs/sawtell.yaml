@@ -1,78 +1,77 @@
-path_to_images: "/Users/danbiderman/Dropbox/Columbia/1.Dan/Research/Paninski/Video_Datasets/Sawtell-data/20201102_Joao/chopped_frames" # Should be a folder containing subfolders with frames from each view
-path_to_points: "/Users/danbiderman/Dropbox/Columbia/1.Dan/Research/Paninski/Video_Datasets/Sawtell-data/20201102_Joao/2d_points_array.npy" # Shape must be (num_cameras, num_frames, num_bodyparts, 2)
+path_to_videos:
+- /Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated.avi
+
+path_to_csv:
+- /Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv
+
 intrinsics:
-    focal_length:
-        focal_length_mm: 15
-        sensor_size: 12
+  focal_length:
+    focal_length_mm: 15
+    sensor_size: 12
+
 extrinsics: # NOTE: len(x) = len(y) = len(z) = number of cameras
-    translation: 
-        cam1: [0, -1.94, 1.72]
-        cam2: [0, 0, 0]
-        cam3: [1.86, 0, 1.72]
-    rotation: # Each entry will be multiplied by pi
-        cam1: [-1/2, 0, 0]
-        cam2: [0, 0, 0]
-        cam3: [0, -1/2, 0]
-bp_names: 
-    - 'head'
-    - 'chin_base'
-    - 'chin_1_4'
-    - 'chin_mid'
-    - 'chin_3_4'
-    - 'chin_end'
-    - 'mid'
-    - 'tail'
-    - 'caudal_d'
-    - 'caudal_v'
-    - 'worm_1'
-    - 'worm_2'
-    - 'worm_3'
-    - 'worm_4'
-    - 'worm_5'
+  translation:
+    cam1: [0, -1.94, 1.72]
+    cam2: [0, 0, 0]
+    cam3: [1.86, 0, 1.72]
+  rotation:   # Each entry will be multiplied by pi
+    cam1: [-1/2, 0, 0]
+    cam2: [0, 0, 0]
+    cam3: [0, -1/2, 0]
+
+mirrored: true
+
+image_limits: # If all views are in image (mirror, for example), need to specify boundaries
+  height_lims: [[0, 165], [165, -1], [165, -1]]
+  width_lims: [[0, -1], [0, -1], [318, -1]]
+
+point_sizes: 4
+
+bp_names:
+- head
+- chin_base
+- chin_1_4
+- chin_mid
+- chin_3_4
+- chin_end
+- mid
+- tail
+- caudal_d
+- caudal_v
+- worm_1
+- worm_2
+- worm_3
+- worm_4
+- worm_5
+
 skeleton:
-    - ["caudal_d", "tail"]
-    - ["caudal_v", "tail"]
-    - ["tail", "mid"]
-    - ["mid", "head"]
-    - ["head", "chin_base"]
-    - ["chin_base", "chin_1_4"]
-    - ["chin_1_4", "chin_mid"]
-    - ["chin_mid", "chin_3_4"]
-    - ["chin_3_4", "chin_end"]
-    - ["worm_1", "worm_2"]
-    - ["worm_2", "worm_3"]
-    - ["worm_3", "worm_4"]
-    - ["worm_4", "worm_5"]
-#    - ["caudal_d", "tail"]
-#    - ["caudal_v", "tail"]
-#    - ["tail", "mid"]
-#    - ["mid", "head"]
-#    - ["head", "chin_base"]
-#    - ["chin_base", "chin_mid"]
-#    - ["chin_mid", "chin_end"]
-#color_list:
-#    - "purple"
-#    - "green"
-#    - "green"
-#    - "green"
-#    - "purple"
-#    - "purple"
-#    - "orange"
-#    - "orange"
+- [caudal_d, tail]
+- [caudal_v, tail]
+- [tail, mid]
+- [mid, head]
+- [head, chin_base]
+- [chin_base, chin_1_4]
+- [chin_1_4, chin_mid]
+- [chin_mid, chin_3_4]
+- [chin_3_4, chin_end]
+- [worm_1, worm_2]
+- [worm_2, worm_3]
+- [worm_3, worm_4]
+- [worm_4, worm_5]
+
 color_list:
-    - "purple"
-    - "green"
-    - "blue"
-    - "red"
-    - "white"
-    - "brown"
-    - "orange"
-    - "yellow"
-    - "chocolate"
-    - "peru"
-    - "olivedrab"
-    - "cyan"
-    - "lime"
-    - "violet"
-    - "darkorange"
-    
+- blue
+- red
+- red
+- red
+- red
+- red
+- white
+- orange
+- green
+- green
+- yellow
+- yellow
+- yellow
+- yellow
+- yellow

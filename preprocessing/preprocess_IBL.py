@@ -2,15 +2,17 @@ from __future__ import print_function
 import os
 import numpy as np
 import re
-from ibl_utils import get_markers
-import cv2
 from pathlib import Path
-from copy import deepcopy
 import argparse
 from tqdm import tqdm
 import sys
+import pandas as pd
+import cv2
+from copy import deepcopy
+import pdb
+from scipy.interpolate import interp1d
+
 sys.path.append(str(Path(__file__).resolve().parent.parent.resolve()))
-from utils.utils_IO import write_video
 
 
 def sorted_nicely(l):
@@ -33,51 +35,24 @@ def get_args():
     parser.add_argument(
         "--raw_data_dir",
         type=str,
-        default="/Volumes/paninski-locker/data/ibl/raw_data/",
+        default="/Volumes/paninski-locker/data/ibl/dlc-networks/paw2-mic-2021-02-21/videos",
     )
     parser.add_argument(
-        "--save_points_path",
+        "--timestamps",
         type=str,
-        default="/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/ibl.npy",
+        default="/Volumes/paninski-locker/data/ibl/dlc-networks/paw2-mic-2021-02-21/timestamps",
     )
-    parser.add_argument(
-        "--save_lh_path",
-        type=str,
-        default="/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/ibl_lh.npy",
-    )
-    parser.add_argument(
-        "--save_frame_path",
-        type=str,
-        default="/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_full/images/",
-    )
-    parser.add_argument("--save_lh", action="store_true", help="save likelihoods")
-    parser.add_argument("--write_frames", action="store_true", help="write frames")
-    parser.add_argument(
-        "--occlusions",
-        action="store_true",
-        help="filter points to find occlusions",
-    )
+
     parser.add_argument(
         "--likelihood_thresh",
         default=0.9,
         type=float,
         help="threshold for filtering points",
     )
-    parser.add_argument("--start_frame", default=0, type=int, help="frame to start at")
     parser.add_argument(
-        "--num_frames", default=1000, type=int, help="number of frames to consider"
-    )
-    parser.add_argument(
-        "--padding",
-        default=5,
-        type=int,
-        help="padding for before and after occluded frames",
-    )
-
-    parser.add_argument(
-        "--add_text",
-        action='store_true',
-        help="Write text on video frames",
+        "--write_dir",
+        type=str,
+        default="./ibl_videos_aligned",
     )
 
     return parser.parse_args()
@@ -103,215 +78,209 @@ def select_occluded_frames(likelihoods, threshold=0.9, padding=5):
     return padded_indices, occluded_dict
 
 
-def get_data():
-    args = get_args()
-    raw_data_dir = Path(args.raw_data_dir).resolve()
-    save_frame_path = Path(args.save_frame_path).resolve()
-    save_points_path = Path(args.save_points_path).resolve()
-    save_lh_path = Path(args.save_lh_path).resolve()
-    num_frames = args.num_frames
-    start_frame = args.start_frame
+def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset=None):
+    """Return pandas df and"""
 
-    likelihood_thresh = args.likelihood_thresh
+    raw_data_dir = Path(raw_data_dir).resolve()
+    times_path = Path(times_path)
+    write_dir = Path(write_dir)
+    write_dir.mkdir(exist_ok=True, parents=True)
 
-    save_frame_path.mkdir(exist_ok=True, parents=True)
+    select_subset = 5000
 
-    camera = "front"
-    # 'right': 150 Hz (640 x 512)
-    # 'left': 60 Hz (1280 x 1024)
-    # 'body': 30 Hz (640 x 512)
+    session_eids = [
+        # "7a887357-850a-4378-bd2a-b5bc8bdd3aac",
+        "6c6983ef-7383-4989-9183-32b1a300d17a",
+        # "88d24c31-52e4-49cc-9f32-6adbeb9eba87",
+        # "81a78eac-9d36-4f90-a73a-7eb3ad7f770b",
+        # "cde63527-7f5a-4cc3-8ac2-215d82e7da26",
+    ]
 
-    lab = "cortexlab"
-    animal = "KS023"
-    date = "2019-12-10"
-    number = "001"
+    for session_eid in session_eids:
 
-    # raw data from flatiron
-    session_path = raw_data_dir / lab / "Subjects" / animal / date / number
-    alf_path = session_path / "alf"
-    video_path = session_path / "raw_video_data"
+        # Exctract eid of interest
+        all_videos = os.listdir(raw_data_dir)
+        for vid in all_videos:
+            if vid.startswith(session_eid) and vid.endswith(".csv"):
+                if "left" in vid:
+                    left_csv_path = raw_data_dir / vid
+                elif "right" in vid and "selected" not in vid:
+                    right_csv_path = raw_data_dir / vid
 
-    if camera == "all":
-        views = ["right", "left", "body"]
-    elif camera == "front":
-        views = ["right", "left"]
-    else:
-        views = [camera]
+            if (
+                vid.startswith(session_eid)
+                and vid.endswith(".mp4")
+                and "labeled" not in vid
+            ):
+                if "left" in vid:
+                    left_vid_path = raw_data_dir / vid
+                elif "right" in vid and "selected" not in vid:
+                    right_vid_path = raw_data_dir / vid
 
-    mp4_files = {view: video_path / f"_iblrig_{view}Camera.raw.mp4" for view in views}
-
-    timestamps = {}
-    for view in views:
-        timestamps[view] = np.load(alf_path / f"_ibl_{view}Camera.times.npy")
-        print(
-            "average %s camera framerate: %f Hz"
-            % (view, 1.0 / np.mean(np.diff(timestamps[view])))
+        # Read csv into pandas
+        left_points_df = pd.read_csv(left_csv_path, header=[0, 1, 2], chunksize=10000)
+        left_points_df = pd.concat([i for i in tqdm(left_points_df)], ignore_index=True)
+        right_points_df = pd.read_csv(right_csv_path, header=[0, 1, 2], chunksize=10000)
+        right_points_df = pd.concat(
+            [i for i in tqdm(right_points_df)], ignore_index=True
         )
 
-    markers = {}
-    masks = {}
-    likelihoods = {}
-    print("Getting markers...")
-    for view in views:
-        markers[view], masks[view], likelihoods[view] = get_markers(
-            alf_path, view, likelihood_thresh=likelihood_thresh
+        if select_subset is None:
+            select_subset = left_points_df.shape[0]
+
+        num_bodyparts_left = int(((left_points_df.columns.shape[0]) - 1) / 3)
+        num_bodyparts_right = int(((right_points_df.columns.shape[0]) - 1) / 3)
+        assert num_bodyparts_left == num_bodyparts_right
+        num_bodyparts = num_bodyparts_left
+
+        # print(left_points_df.columns.values)
+        left_points_and_confs = left_points_df.values[:, 1:]
+        right_points_and_confs = right_points_df.values[:, 1:]
+
+        # Select columns with points and likelihoods seperately
+        left_points_arr = np.empty((left_points_and_confs.shape[0], num_bodyparts, 2))
+        left_confs = np.empty((left_points_and_confs.shape[0], num_bodyparts))
+        for i in range(num_bodyparts):
+            x = left_points_and_confs[:, 3 * i]
+            y = left_points_and_confs[:, 3 * i + 1]
+            lh = left_points_and_confs[:, 3 * i + 2]
+            left_points_arr[:, i, 0] = x
+            left_points_arr[:, i, 1] = y
+            left_confs[:, i] = lh
+
+        # Select columns with points and likelihoods seperately
+        right_points_arr = np.empty((right_points_and_confs.shape[0], num_bodyparts, 2))
+        right_confs = np.empty((right_points_and_confs.shape[0], num_bodyparts))
+        for i in range(num_bodyparts):
+            x = right_points_and_confs[:, 3 * i]
+            y = right_points_and_confs[:, 3 * i + 1]
+            lh = right_points_and_confs[:, 3 * i + 2]
+            right_points_arr[:, i, 0] = x
+            right_points_arr[:, i, 1] = y
+            right_confs[:, i] = lh
+
+        # Get timestamps
+        timestamp_list = os.listdir(times_path)
+        for time_path in timestamp_list:
+            if session_eid in time_path:
+                if "left" in time_path:
+                    left_time_path = times_path / time_path
+                    times_left = np.load(left_time_path)
+                elif "right" in time_path:
+                    right_time_path = times_path / time_path
+                    times_right = np.load(right_time_path)
+
+        left_points_arr = left_points_arr[:select_subset]
+
+        interpolater = interp1d(
+            times_right,
+            np.arange(len(times_right)),
+            kind="nearest",
+            fill_value="extrapolate",
         )
-        # chop off timestamps that don't have markers
-        timestamps[view] = timestamps[view][: markers[view]["nose_tip"].shape[0]]
-    # get closest stamps on right cam (150 Hz) for each stamp of left (60 Hz)
-    from scipy.interpolate import interp1d
 
-    interpolater = interp1d(
-        timestamps["right"],
-        np.arange(len(timestamps["right"])),
-        kind="nearest",
-        fill_value="extrapolate",
-    )
-    idx_aligned = np.round(interpolater(timestamps["left"])).astype(np.int)
+        idx_aligned = np.round(interpolater(times_left[:select_subset])).astype(np.int)
+        
+        """
 
-    # ------------------------------------------------------------
-    # Read and write numpy array
-    print("Making array...")
-    multiview_arr = []
-    likelihoods_arr = []
-    for view in views:
-        multiview_arr.append([])
-        likelihoods_arr.append([])
+        idx_aligned = []
+        idx_aligned_original = []  # Include frames beyond scope
+        for t in tqdm(times_left[:select_subset]):
+            aligned = find_nearest(times_right, t)
+            idx_aligned_original.append(aligned)
+            if aligned >= right_points_arr.shape[0]:
+                aligned = right_points_arr.shape[0] - 1
+            idx_aligned.append(aligned)
 
-    bodyparts = markers[views[0]].keys()
-    bp_to_keep = ["nose_tip", "paw_l", "paw_r"]
+        assert len(idx_aligned) == left_points_arr.shape[0]
+        idx_aligned = np.asarray(idx_aligned)
+        print("--------------------------")
+        """
 
-    # Swap left and right paw in one view for consistency
-    paw_r = deepcopy(markers["right"]["paw_r"])
-    markers["right"]["paw_r"] = markers["right"]["paw_l"]
-    markers["right"]["paw_l"] = paw_r
+        idx_aligned_original = deepcopy(idx_aligned)
+        right_points_arr = right_points_arr[idx_aligned, :, :]
+        right_confs = right_confs[idx_aligned, :]
 
-    paw_r_lh = deepcopy(likelihoods["right"]["paw_r"])
-    likelihoods["right"]["paw_r"] = likelihoods["right"]["paw_l"]
-    likelihoods["right"]["paw_l"] = paw_r_lh
+        # Make new videos and plot random frames
+        left_cap = cv2.VideoCapture(str(left_vid_path))
+        left_fps = left_cap.get(cv2.CAP_PROP_FPS)
 
-    for bp in bodyparts:
-        if bp not in bp_to_keep:
-            continue
-        for i, view in enumerate(views):
-            if view == "left":
-                multiview_arr[i].append(
-                    markers[view][bp][start_frame : start_frame + num_frames, :]
-                )
-                likelihoods_arr[i].append(
-                    likelihoods[view][bp][start_frame : start_frame + num_frames]
-                )
+        right_cap = cv2.VideoCapture(str(right_vid_path))
+        right_fps = right_cap.get(cv2.CAP_PROP_FPS)
 
-            elif view == "right":
-                multiview_arr[i].append(
-                    markers[view][bp][idx_aligned][
-                        start_frame : start_frame + num_frames, :
-                    ]
-                )
-                likelihoods_arr[i].append(
-                    likelihoods[view][bp][idx_aligned][
-                        start_frame : start_frame + num_frames
-                    ]
-                )
-    multiview_arr = np.array(multiview_arr)
-    multiview_arr = multiview_arr.transpose((0, 2, 1, 3))
+        success, image = right_cap.read()
+        height, width, layers = image.shape
+        right_size = (width, height)
 
-    likelihoods_arr = np.array(likelihoods_arr)
-    likelihoods_arr = likelihoods_arr.transpose((0, 2, 1))
-    # ------------------------------------------------------------
-
-    # Select occluded frames
-    if args.occlusions:
-        occluded_indices, keep_dict = select_occluded_frames(
-            likelihoods_arr, threshold=likelihood_thresh, padding=args.padding
+        right_out_vid = cv2.VideoWriter(
+            filename=str(write_dir / (right_vid_path.stem + "_selected.mp4")),
+            fourcc=cv2.VideoWriter_fourcc("m", "p", "4", "v"),
+            fps=left_fps,
+            frameSize=right_size,
         )
-    else:
-        occluded_indices = np.arange(multiview_arr.shape[1])
-        keep_dict = dict((e, i) for (i, e) in enumerate(occluded_indices))
+        count = 0
 
-    multiview_arr = multiview_arr[:, occluded_indices, :, :]
-    likelihoods_arr = likelihoods_arr[:, occluded_indices, :]
+        while success:
+            if count in idx_aligned_original:
+                right_out_vid.write(np.flip(image, axis=1))
+            success, image = right_cap.read()
+            count += 1
 
-    print("multiview_arr: ", multiview_arr.shape)
-    print(len(occluded_indices))
-    print(len(keep_dict.keys()))
-    # Read and write video frames
-    if args.write_frames:
-        print("Writing frames...")
-        # ------------------------------------------------------------
-        for view in views:
-            frame_path = save_frame_path / view
-            frame_path.mkdir(exist_ok=True, parents=True)
+        success, image = left_cap.read()
+        height, width, layers = image.shape
+        left_size = (width, height)
 
-            # Extract frames at specific timesteps
-            vidcap = cv2.VideoCapture(str(mp4_files[view]))
-            fps = vidcap.get(cv2.CAP_PROP_FPS)
+        left_out_vid = cv2.VideoWriter(
+            filename=str(write_dir / (left_vid_path.stem + "_selected.mp4")),
+            fourcc=cv2.VideoWriter_fourcc("m", "p", "4", "v"),
+            fps=left_fps,
+            frameSize=left_size,
+        )
+        count = 0
 
-            count = 0
-            local_count = 0
-            tracker_count = 0
+        while success:
+            left_out_vid.write(image)
+            success, image = left_cap.read()
+            count += 1
+            if count >= select_subset:
+                break
 
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            while True:
-                success, image = vidcap.read()
-                if success:
-                    height, width = image.shape[:2]
+        left_points_df = left_points_df[
+            left_points_df.index.isin(np.arange(select_subset))
+        ]
+        # right_points_df = right_points_df[right_points_df.index.isin(idx_aligned)]
+        right_points_df = right_points_df.reindex(idx_aligned)
 
-                    # Handle right view
-                    if view == "right":
-                        if args.add_text:
-                            cv2.putText(
-                                image,
-                                str(timestamps[view][count]),
-                                (width - 300, height - 100),
-                                font,
-                                1,
-                                (255, 255, 255),
-                                2,
-                                cv2.LINE_AA,
-                            )
+        # Flip points
+        for i in range(num_bodyparts):
+            right_points_df.iloc[:, 1 + i * 3] = (
+                right_size[0] - right_points_df.iloc[:, 1 + i * 3]
+            )
 
-                        if count in idx_aligned:
-                            if tracker_count in keep_dict:
-                                cv2.imwrite(
-                                    str(frame_path / f"{local_count}.png"), image
-                                )
-                                local_count += 1
-                            tracker_count += 1
+        # Swap labels
+        right_points_df_swapped = deepcopy(right_points_df)
+        right_points_df_swapped.iloc[:, 1] = right_points_df.iloc[:, 4]
+        right_points_df_swapped.iloc[:, 4] = right_points_df.iloc[:, 1]
+        right_points_df_swapped.iloc[:, 2] = right_points_df.iloc[:, 5]
+        right_points_df_swapped.iloc[:, 5] = right_points_df.iloc[:, 2]
+        right_points_df_swapped.iloc[:, 3] = right_points_df.iloc[:, 6]
+        right_points_df_swapped.iloc[:, 6] = right_points_df.iloc[:, 3]
 
-                    # Handle left view
-                    else:
-                        if args.add_text:
-                            cv2.putText(
-                                image,
-                                str(timestamps[view][count]),
-                                (width - 400, height - 100),
-                                font,
-                                2,
-                                (255, 255, 255),
-                                2,
-                                cv2.LINE_AA,
-                            )
+        left_points_df_swapped = deepcopy(left_points_df)
+        left_points_df_swapped.iloc[:, 1] = left_points_df.iloc[:, 4]
+        left_points_df_swapped.iloc[:, 4] = left_points_df.iloc[:, 1]
+        left_points_df_swapped.iloc[:, 2] = left_points_df.iloc[:, 5]
+        left_points_df_swapped.iloc[:, 5] = left_points_df.iloc[:, 2]
+        left_points_df_swapped.iloc[:, 3] = left_points_df.iloc[:, 6]
+        left_points_df_swapped.iloc[:, 6] = left_points_df.iloc[:, 3]
 
-                        if count in keep_dict:
-                            cv2.imwrite(str(frame_path / f"{local_count}.png"), image)
-                            local_count += 1
+        with open(str(write_dir / f"{left_vid_path.stem}.csv"), "w") as file:
+            left_points_df_swapped.to_csv(file, index=False)
 
-                        tracker_count += 1
-
-                    count += 1
-
-                if tracker_count >= num_frames or not success:
-                    break
-            # Now write video:
-            write_video(image_dir=str(frame_path), out_file=str(save_frame_path / f'{view}.mp4'), fps=fps)
-        # ------------------------------------------------------------
-
-    np.save(save_points_path, multiview_arr)
-
-    if args.save_lh:
-        np.save(save_lh_path, likelihoods_arr)
+        with open(str(write_dir / f"{right_vid_path.stem}.csv"), "w") as file:
+            right_points_df.to_csv(file, index=False)
 
 
 if __name__ == "__main__":
-    get_data()
+    args = get_args()
+    get_data(args.raw_data_dir, args.timestamps, args.write_dir)
