@@ -16,9 +16,7 @@ from scipy.spatial.transform import Rotation as R
 from utils.arr_utils import slice_high_confidence
 import multiprocessing as mp
 import time
-from preprocessing.preprocess_Sawtell_DLC import get_data
 from functools import partial
-from scipy import signal
 
 
 def get_args():
@@ -494,7 +492,7 @@ def reconstruct_points(
     points_2d_reproj = reproject_points(points_3d, cam_group)
 
     frame_indices = np.arange(points_2d_joints.shape[1], step=downsample)
-    
+
     print("####################################")
     print("extracting frames")
     print("####################################")
@@ -529,7 +527,7 @@ def reconstruct_points(
         add_text=True,
     )
 
-    #-------------Get reprojection errors-----------------
+    # -------------Get reprojection errors-----------------
 
     # Getting frames with high reprojection error
 
@@ -552,7 +550,7 @@ def reconstruct_points(
     bad_reproj_indices = np.where(average_reproj_errors > 2)[0]
     frames_filter = np.all(points_filter, axis=-1)
     bad_reproj_indices = np.where(~frames_filter[bad_reproj_indices])[0]
-    #-------------------------------------------------------
+    # -------------------------------------------------------
     print("Writing bad frames...")
     if config.mirrored:
         frames = extract_frames(bad_reproj_indices, video_paths[0])
@@ -593,7 +591,7 @@ def reconstruct_points(
         fps=10,
         add_text=False,
     )
-    
+
 
 if __name__ == "__main__":
     args = get_args()
