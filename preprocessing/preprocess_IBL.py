@@ -14,6 +14,11 @@ from scipy.interpolate import interp1d
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.resolve()))
 
+"""
+Usage: 
+
+"""
+
 
 def sorted_nicely(l):
     """ Sort the given iterable in the way that humans expect."""
@@ -55,6 +60,12 @@ def get_args():
         default="./ibl_videos_aligned",
     )
 
+    parser.add_argument(
+        "--select_subset",
+        type=int,
+        help="Number of frames to select"
+    )
+
     return parser.parse_args()
 
 
@@ -86,14 +97,13 @@ def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset
     write_dir = Path(write_dir)
     write_dir.mkdir(exist_ok=True, parents=True)
 
-    select_subset = 5000
-
+    
     session_eids = [
-        # "7a887357-850a-4378-bd2a-b5bc8bdd3aac",
+        "7a887357-850a-4378-bd2a-b5bc8bdd3aac",
         "6c6983ef-7383-4989-9183-32b1a300d17a",
-        # "88d24c31-52e4-49cc-9f32-6adbeb9eba87",
-        # "81a78eac-9d36-4f90-a73a-7eb3ad7f770b",
-        # "cde63527-7f5a-4cc3-8ac2-215d82e7da26",
+        "88d24c31-52e4-49cc-9f32-6adbeb9eba87",
+        "81a78eac-9d36-4f90-a73a-7eb3ad7f770b",
+        "cde63527-7f5a-4cc3-8ac2-215d82e7da26",
     ]
 
     for session_eid in session_eids:
@@ -175,29 +185,13 @@ def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset
         interpolater = interp1d(
             times_right,
             np.arange(len(times_right)),
-            kind="nearest",
+            kind="cubic",
             fill_value="extrapolate",
         )
 
         idx_aligned = np.round(interpolater(times_left[:select_subset])).astype(np.int)
-        
-        """
 
-        idx_aligned = []
-        idx_aligned_original = []  # Include frames beyond scope
-        for t in tqdm(times_left[:select_subset]):
-            aligned = find_nearest(times_right, t)
-            idx_aligned_original.append(aligned)
-            if aligned >= right_points_arr.shape[0]:
-                aligned = right_points_arr.shape[0] - 1
-            idx_aligned.append(aligned)
-
-        assert len(idx_aligned) == left_points_arr.shape[0]
-        idx_aligned = np.asarray(idx_aligned)
-        print("--------------------------")
-        """
-
-        idx_aligned_original = deepcopy(idx_aligned)
+        # idx_aligned_original = deepcopy(idx_aligned)
         right_points_arr = right_points_arr[idx_aligned, :, :]
         right_confs = right_confs[idx_aligned, :]
 
@@ -221,7 +215,7 @@ def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset
         count = 0
 
         while success:
-            if count in idx_aligned_original:
+            if count in idx_aligned:
                 right_out_vid.write(np.flip(image, axis=1))
             success, image = right_cap.read()
             count += 1

@@ -58,6 +58,13 @@ def get_args():
         action="store_true",
         help="Save frames with high reprojection errors",
     )
+
+    parser.add_argument(
+        "--reproj_thresh",
+        type=float,
+        default=2,
+        help="Threshold for reprojection errors to select bad frames",
+    )
     # -------------------- Optional Dataset-dependent arguments -----------------------
     return parser.parse_args()
 
@@ -374,6 +381,7 @@ def reconstruct_points(
     csv_type="dlc",
     chunksize=10000,
     save_bad_frames=True,
+    reproj_thresh=2
 ):
     experiment_data = read_yaml(config, csv_type=csv_type)
     cam_group = experiment_data["cam_group"]
@@ -545,11 +553,11 @@ def reconstruct_points(
         np.nanmean(np.nanmean(reprojection_errors, axis=0), axis=-1), axis=-1
     )
 
-    plt.hist(average_reproj_errors, bins=100)
-    plt.show()
-    bad_reproj_indices = np.where(average_reproj_errors > 2)[0]
-    frames_filter = np.all(points_filter, axis=-1)
-    bad_reproj_indices = np.where(~frames_filter[bad_reproj_indices])[0]
+    # plt.hist(average_reproj_errors, bins=100)
+    # plt.show()
+    bad_reproj_indices = np.where(average_reproj_errors > reproj_thresh)[0]
+    #frames_filter = np.all(points_filter, axis=-1)
+    #bad_reproj_indices = np.where(~frames_filter[bad_reproj_indices])[0]
     # -------------------------------------------------------
     print("Writing bad frames...")
     if config.mirrored:
@@ -582,6 +590,31 @@ def reconstruct_points(
     )
 
     print("Writing sorted frames...")
+    frame_indices = np.arange(points_2d_joints.shape[1], step=1)
+
+    if config.mirrored:
+        frames = extract_frames(frame_indices, video_paths[0])
+        og_dims = frames[0].shape
+        frames = cut_frames(frames, img_settings)
+    else:
+        og_dims = None
+        img_settings = None
+        frames = []
+        for vid_path in video_paths:
+            frames.append(extract_frames(frame_indices, vid_path))
+
+    reproj_frames = save_reproj(
+        points_2d_reproj[:, frame_indices, :, :],
+        points_2d_joints[:, frame_indices, :, :],
+        cam_group,
+        point_sizes,
+        F,
+        color_list,
+        frames,
+        output_dir / "reprojections",
+        og_dims,
+        img_settings,
+    )
 
     reproj_sort_indices = np.argsort(average_reproj_errors)[::-1]
     reproj_frames_sorted = list(np.asarray(reproj_frames)[reproj_sort_indices])
@@ -589,7 +622,7 @@ def reconstruct_points(
         frames=reproj_frames_sorted,
         out_file=str(output_dir / "reprojections_sorted.mov"),
         fps=10,
-        add_text=False,
+        add_text=True,
     )
 
 
