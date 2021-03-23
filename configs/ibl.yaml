@@ -1,6 +1,10 @@
-path_to_images: "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/IBL_full/images" # Should be a folder containing subfolders with frames from each view
-path_to_points: "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/ibl.npy" # Shape must be (num_cameras, num_frames, num_bodyparts, 2)
-path_to_likelihoods: "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/ibl_lh.npy" # Shape must be (num_cameras, num_frames, num_bodyparts, 2)
+path_to_videos: 
+    - /Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/ibl_videos_aligned/6c6983ef-7383-4989-9183-32b1a300d17a_iblrig_rightCamera.paws_downsampled.flipped_20min_selected.mp4
+    - /Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/ibl_videos_aligned/6c6983ef-7383-4989-9183-32b1a300d17a_iblrig_leftCamera.paws_downsampled_20min_selected.mp4
+
+path_to_csv: 
+    - /Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/ibl_videos_aligned/6c6983ef-7383-4989-9183-32b1a300d17a_iblrig_rightCamera.paws_downsampled.flipped_20min.csv
+    - /Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/ibl_videos_aligned/6c6983ef-7383-4989-9183-32b1a300d17a_iblrig_leftCamera.paws_downsampled_20min.csv
 
 intrinsics:
     focal_length:
@@ -16,15 +20,15 @@ extrinsics: # NOTE: defaults to [0,0,0]
         cam1: [0, 0, 0]
         cam2: [0, 2.0127/pi, 0]
 
-
+point_sizes: 1
 
 bp_names: 
-    - nose_tip
+#    - nose_tip
     - paw_l
     - paw_r
 
 color_list:
-    - "green"
+#    - "green"
     - "blue"
     - "red"
 

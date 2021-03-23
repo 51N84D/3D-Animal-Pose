@@ -390,7 +390,7 @@ def draw_circles(img, points, point_colors=None, point_size=10, marker_type=None
                 markerType=marker,
                 markerSize=point_size,
                 thickness=2,
-                color=(color[2], color[1], color[0]),
+                color=(color[2], color[1], color[0], 0),
             )
         else:
             cv2.circle(

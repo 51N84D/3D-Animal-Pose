@@ -1146,7 +1146,7 @@ class CameraGroup:
         # errors_reproj *= 0
         # return errors_reproj
         
-        #errors_reproj *= 10000000
+        errors_reproj *= 100000000000000000000000000000000000000.0
         # return errors_reproj
         # temporal constraint
         # First, fill in points
