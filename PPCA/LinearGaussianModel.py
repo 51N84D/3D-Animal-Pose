@@ -4,6 +4,15 @@
 Created on Tue Mar 23 14:36:13 2021
 
 @author: danbiderman
+TODO: support batched matrix multiplication. see the following example of using @ matmul to support e.g., 100-d observations
+a = np.random.normal(size=
+                (6,3))
+b = np.random.normal(size=
+                (3,3))
+c = np.random.normal(size=
+                (100, 3,1))
+res = a@b@c
+res.shape
 """
 
 import scipy
@@ -26,7 +35,7 @@ class LinearGaussianModel:
         self.likelihood_precision = L # D by D
         self.likelihood_cov = np.linalg.inv(L) # D by D
         self.marginal_obj = self.compute_marginal_using_prior()
-        self.simplify_posterior= False # ToDo: change in the future. 
+        self.simplify_posterior= simplify_posterior # this is for the PPCA posterior.
         # general posterior quantities
 #         self.Sigma = np.linalg.inv(self.prior_precision + np.linalg.multi_dot(
 #             self.likelihood_A.T, self.likelihood_precision, self.likelihood_A)) # posterior cov; not dependant on obss
@@ -97,9 +106,21 @@ class LinearGaussianModel:
         Sigma_x =  np.linalg.multi_dot([self.likelihood_A, self.prior_cov, self.likelihood_A.T]) + \
                 self.likelihood_cov
         return scipy.stats.multivariate_normal(
-           mu_x.squeeze(), Sigma_x)        
-        
-    
+           mu_x.squeeze(), Sigma_x)
+
+    def calc_zhat_w_pinv(self, obs):
+        """
+        obs: observation (2K-dim vec), K x's followed by K y's. may contain nans
+        compute latent z using obs and pseuduinv(A). pseudoinverse of an e.g., (N x M) matrix is (M x N).
+        """
+        valid_inds = np.where(~np.isnan(obs))[0]
+        diff = (obs[valid_inds] - self.likelihood_b[valid_inds]).reshape(-1, 1)
+        return np.linalg.pinv(self.likelihood_A[valid_inds, :]).dot(diff)
+
+    def predict_w_zhat(self, z_hat):
+        # same as mean prediction in self.predict
+        return self.likelihood_A.dot(z_hat) + self.likelihood_b.reshape(-1, 1)
+
     def sample_from_prior(self):
         return 0
         # in fact one can just sample from p(x) = \int_z p(z)p(x|z) dz; z \sim prior()

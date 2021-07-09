@@ -13,3 +13,17 @@ traces/
 configs/
 results/
 analysis/
+
+# plots
+*.jpg
+*.png
+*.eps
+
+# vids
+*.mov
+*.mp4
+*.avi
+
+# checkpoints
+*.DS_Store
+*.ipynb_checkpoints

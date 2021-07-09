@@ -8,6 +8,8 @@ Created on Mon Mar 29 11:29:37 2021
 import numpy as np 
 import scipy
 import matplotlib.pyplot as plt
+from pathlib import Path
+import os
 
 def mahalanobis_distance(cov, mean, stacked_meshgrid):
     '''Args: stacked_meshgrid: shape(,,2,1)
@@ -27,12 +29,16 @@ def mahalanobis_distance(cov, mean, stacked_meshgrid):
 #out = mahalanobis_distance(cov_test, mean_test, stacked_meshgrid)
 #out.shape
 
-def make_meshgrid(mean, grid_dev):
+def make_meshgrid(mean, grid_dev, num_points=500, allow_pred_outside=True, im_size=None):
     #out = np.expand_dims(np.mgrid[mean[0]-grid_dev:mean[0]+grid_dev:1., \
     #     mean[1]-grid_dev:mean[1]+grid_dev:1.].transpose(1, 2, 0), -1)
     #return out
-    x = np.linspace(mean[0]-grid_dev,mean[0]+grid_dev,300)
-    y = np.linspace(mean[1]-grid_dev,mean[1]+grid_dev,300)
+    if allow_pred_outside:
+        x = np.linspace(mean[0]-grid_dev, mean[0]+grid_dev,num_points)
+        y = np.linspace(mean[1]-grid_dev,mean[1]+grid_dev,num_points)
+    else: # do not cross zero and max values.
+        x = np.linspace(np.maximum(mean[0] - grid_dev,0), np.minimum(mean[0] + grid_dev, im_size[1]), num_points)
+        y = np.linspace(np.maximum(mean[1] - grid_dev,0), np.minimum(mean[1] + grid_dev, im_size[0]), num_points)
     x,y = np.meshgrid(x,y)
     stacked_meshgrid = np.expand_dims(np.stack([x,y], axis=-1), 
                                       axis=-1)
@@ -172,3 +178,111 @@ def create_ind_list(num_views):
     for i in range(num_views):
         ind_list.append(np.array([i, i+num_views]))
     return ind_list
+
+def make_arr_for_pca(pts_arr_2d):
+    '''
+    Args: pts_arr_2d: (num views, num frames, num bodyparts, 2)
+    Returns: arr_for_pca (num views * 2, non-nan(num frames * num bodyparts))'''
+    pts_2d = pts_arr_2d.reshape(
+        pts_arr_2d.shape[0],
+        pts_arr_2d.shape[1] * pts_arr_2d.shape[2],
+        pts_arr_2d.shape[3],
+    )
+    pts_2d_filtered, clean_point_indices = clean_nans(pts_2d, True)
+    arr_for_pca = np.concatenate((pts_2d_filtered[:,:,0],
+                            pts_2d_filtered[:,:,1]),
+                             axis=0) # squeeze (x,y) coords with views
+    return arr_for_pca
+
+def set_or_open_folder(folder_path):
+    if not os.path.isdir(folder_path):
+        os.makedirs(folder_path, exist_ok=True)
+        print("Opened a new folder at: {}".format(folder_path))
+    else:
+        print("The folder already exists at: {}".format(folder_path))
+    return Path(folder_path) # a PosixPath object
+
+
+def infer_and_predict(LG_model, arr_squeezed):
+    '''Args:
+    LG_model: LinearGaussianModel instance.
+    arr_squeezed: np.shape(num_features, num_data_points)
+    Returns: posterior dict, predictions dict.
+    Currently loops over datapoints, compute posterior, and predict.
+    the LG_model class could be easily converted to batched ops using @
+'''
+    # save room
+    posteriors = {}
+    posteriors["mean"] = np.zeros((LG_model.prior_mean.shape[0], arr_squeezed.shape[1]))
+    posteriors["cov"] = np.zeros((LG_model.prior_mean.shape[0], LG_model.prior_mean.shape[0], arr_squeezed.shape[1]))
+    predictions = {}
+    predictions["mean"] = np.zeros_like(arr_squeezed)
+    predictions["cov"] = np.zeros((arr_squeezed.shape[0],
+                                   arr_squeezed.shape[0],
+                                   arr_squeezed.shape[1]))
+
+    for i in range(arr_squeezed.shape[1]):
+        # compute posterior
+        post_mean, post_cov = LG_model.compute_posterior(arr_squeezed[:, i])  # a single frame and body part
+        posteriors["mean"][:, i], posteriors["cov"][:, :, i] = post_mean.squeeze(), post_cov
+        # predict
+        mean, cov = LG_model.predict(post_mean, post_cov, False)
+        predictions["mean"][:, i], predictions["cov"][:, :, i] = mean.squeeze(), cov
+
+    return posteriors, predictions
+
+def reshape_posts_or_preds(predictions, num_features, num_frames, num_bodyparts):
+    """break down num_frames and num_bodyparts"""
+    out_dict = {}
+    out_dict["mean"] = predictions["mean"].reshape(num_features, num_frames, num_bodyparts)
+    out_dict["cov"] = predictions["cov"].reshape(num_features,
+                                                num_features,
+                                                num_frames,
+                                                num_bodyparts)
+    return out_dict
+
+def flag_missing_obs(arr_squeezed):
+    '''TODO: should be arr_squeezed, or any arr ok?'''
+    counts = np.arange(0,np.shape(arr_squeezed)[0] + 2, 2) # assuming if you miss an x coord, you'll miss its y pair
+    missing_obs_bool = np.zeros((len(counts), np.shape(arr_squeezed)[-1]), dtype = bool)
+    for i in range(len(counts)):
+        missing_obs_bool[i,:] = np.sum(np.isnan(arr_squeezed), axis=0)==counts[i]
+    assert((np.sum(missing_obs_bool, axis=0)==1).all())
+    return missing_obs_bool, counts
+
+
+def compute_per_view_empirical_maha(LG_model, predictions, arr_squeezed):
+    '''loop over views and (bodyparts X frames). compute mahalanobis distance between observation and prediction
+    TODO: long with too many loops.'''
+    ind_list = create_ind_list(int(arr_squeezed.shape[0] / 2))
+    per_view_pred_covs_list = []
+    per_view_posterior_mean = []
+    per_view_obs = []
+    # separate pred_mean, pred_cov, and obs into the different views.
+    for i in range(len(ind_list)):
+        per_view_pred_covs_list.append([])
+        per_view_posterior_mean.append([])
+        per_view_obs.append([])
+        for j in range(predictions["cov"].shape[-1]):
+            per_view_pred_covs_list[i].append(
+                LG_model.extract_blocks_from_inds(ind_list[i], predictions["cov"][:, :, j]))
+            per_view_posterior_mean[i].append(predictions["mean"][ind_list[i], j])
+            per_view_obs[i].append(arr_squeezed[ind_list[i], j])
+
+    # compute maha distance
+    maha_list = []
+    for i in range(len(ind_list)):
+        maha_list.append([])
+        for j in range(predictions["cov"].shape[-1]):
+            diff = per_view_obs[i][j] - per_view_posterior_mean[i][j]
+            maha_list[i].append(diff.T @ np.linalg.inv(per_view_pred_covs_list[i][j]) @ diff)
+
+    return maha_list
+
+def compute_percentile_in_list(maha_list, percentile=95):
+    empirical_ds = np.zeros(len(maha_list))
+    for i in range(len(maha_list)):
+        empirical_ds[i] = np.nanpercentile(maha_list[i], percentile)
+    return empirical_ds
+
+
