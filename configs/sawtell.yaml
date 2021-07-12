@@ -49,6 +49,7 @@ bp_names:
 - pectoral_R_base
 
 
+
 skeleton:
   - [chin_base, head]
   - [chin1_4, chin_base]
@@ -79,6 +80,7 @@ color_list:
 - yellow
 - purple
 - purple
+
 
 view_names:
   - top
