@@ -77,7 +77,7 @@ def process_dlc_csv(path_to_csv, bp_to_keep=None, lh_thresh=0.9):
     return points_arr, confs
 
 
-def read_yaml(path_to_yaml, csv_type):
+def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
     assert isinstance(path_to_yaml, str)
     path_to_yaml = Path(path_to_yaml)
     with open(path_to_yaml, "r") as f:
@@ -117,7 +117,9 @@ def read_yaml(path_to_yaml, csv_type):
             dlc_file=path_to_csvs[0],
             save_arrays=False,
             chunksize=10000,
-            bp_to_keep=config.bp_names
+            bp_to_keep=config.bp_names,
+            start_idx=start_idx,
+            nrows=nrows
         )
     else:
         raise ValueError(f"csv_type {csv_type} is invalid.")

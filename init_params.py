@@ -9,9 +9,9 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 import numpy as np
 from utils.utils_plotting import plot_cams_and_points, draw_circles, drawLine, skew
-from utils.utils_IO import (
-    combine_images,
-)
+from utils.utils_IO import combine_images
+from utils.split_images import split_images
+from utils.extract_frames import extract_frames
 from utils.utils_BA import clean_nans
 from utils.points_to_dataframe import points3d_arr_to_df
 import plotly.io as pio
@@ -33,23 +33,34 @@ from scipy.spatial.transform import Rotation as R
 import cv2
 from tqdm import tqdm
 import argparse
+import os
+import shutil
+
+
 pio.renderers.default = None
 
 
 def get_args():
     parser = argparse.ArgumentParser(description="3d reconstruction")
 
-    # dataset
     parser.add_argument("--config", type=str, default="./configs/sawtell.yaml")
     parser.add_argument("--start_index", type=int, default=0)
     parser.add_argument("--end_index", type=int)
     parser.add_argument("--downsampling", type=int, default=1)
     parser.add_argument("--plot_epipolar", action="store_true")
     parser.add_argument("--dataset", default=None, help="str with name")
-    parser.add_argument("--dataset_path", default=None, help="str with folder path")
+
     parser.add_argument("--skip_frame", default=None, type=int, help="frame to skip")
-    parser.add_argument("--point_sizes", default=7, type=int, nargs='+', help="sizes of points in each view")
-    parser.add_argument("--equal_size", action='store_true', help="equalize reprojection images")
+    parser.add_argument(
+        "--point_sizes",
+        default=7,
+        type=int,
+        nargs="+",
+        help="sizes of points in each view",
+    )
+    parser.add_argument(
+        "--equal_size", action="store_true", help="equalize reprojection images"
+    )
 
     return parser.parse_args()
 
@@ -102,7 +113,7 @@ def get_F_geometry():
         P2 = np.matmul(K2, np.concatenate((R2, t2[:, np.newaxis]), axis=1))
 
         # Get camera center (view 1)
-        R1_inv = np.linalg.inv(R1) 
+        R1_inv = np.linalg.inv(R1)
         C = np.matmul(-R1_inv, t1)
         C = np.append(C, 1)
 
@@ -161,7 +172,7 @@ def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
 
         if len(img.shape) < 3:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-            
+
         if np.max(img) <= 1:
             img *= 255
 
@@ -181,14 +192,19 @@ def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
         points_nonfilled[nonfilled_indices] = curr_points_2d_reproj[nonfilled_indices]
         points_filled[~nonfilled_indices] = curr_points_2d_reproj[~nonfilled_indices]
 
-        draw_circles(img, curr_points_2d_og.astype(np.int32), color_list, point_size=point_sizes[cam_num])
+        draw_circles(
+            img,
+            curr_points_2d_og.astype(np.int32),
+            color_list,
+            point_size=point_sizes[cam_num],
+        )
 
         draw_circles(
             img,
             points_filled.astype(np.int32),
             color_list,
             point_size=point_sizes[cam_num] * 4,
-            marker_type='cross'
+            marker_type="cross",
         )
 
         draw_circles(
@@ -196,7 +212,7 @@ def get_reproject_images(points_2d_reproj, points_2d_og, path_images, i=0):
             points_nonfilled.astype(np.int32),
             color_list,
             point_size=point_sizes[cam_num],
-            thickness=2
+            thickness=2,
         )
 
         # Draw epipolar lines
@@ -377,11 +393,19 @@ def get_dropdown(num_cameras):
 print("---------------- READING YAML--------------------")
 args = get_args()
 
-experiment_data = read_yaml(args.config, args.skip_frame)
+ind_start = args.start_index
+ind_end = args.end_index
+if ind_end is None:
+    ind_end = num_frames
+
+experiment_data = read_yaml(
+    args.config, "sawtell", start_idx=ind_start, nrows=ind_end - ind_start
+)
 
 config = experiment_data["config"]
 
 pts_2d_joints = experiment_data["points_2d_joints"]
+print("pts_2d_joints: ", pts_2d_joints.shape)
 likelihoods = experiment_data["likelihoods"]
 
 pts_2d = pts_2d_joints.reshape(
@@ -394,21 +418,42 @@ img_width = experiment_data["image_widths"]
 img_height = experiment_data["image_heights"]
 
 focal_length = experiment_data["focal_length"]
-path_images = experiment_data["frame_paths"]
 num_cameras = experiment_data["num_cams"]
 num_bodyparts = experiment_data["num_bodyparts"]
 num_frames = experiment_data["num_frames"]
 
-ind_start = args.start_index
-ind_end = args.end_index
-if ind_end is None:
-    ind_end = num_frames
 downsampling = args.downsampling
 plot_epipolar = args.plot_epipolar
 point_sizes = args.point_sizes
 if isinstance(point_sizes, int):
     point_sizes = [point_sizes] * num_cameras
 equal_size = args.equal_size
+
+if "frame_paths" in experiment_data.keys():
+    path_images = experiment_data["frame_paths"]
+
+split_images_path = Path("./split_images").resolve()
+shutil.rmtree(split_images_path)
+
+"""
+if split_images_path.exists():
+    path_images = []
+    for view_idx, view_name in enumerate(os.listdir(str(split_images_path))):
+        path_images.append([])
+        view_dir = split_images_path / view_name
+        for img_idx, img_name in enumerate(os.listdir(str(view_dir))):
+            img_path = view_dir / img_name
+            path_images[view_idx].append(img_path)
+"""
+# else:  # extract frames and make paths
+indices = np.arange(ind_start, ind_end)
+frames = extract_frames(indices, experiment_data["video_paths"][0])
+split_frames, path_images = split_images(
+    frames,
+    config.image_limits["height_lims"],
+    config.image_limits["width_lims"],
+    write_path=split_images_path,
+)
 print("------------------------------------------------")
 
 color_list = config.color_list
@@ -419,10 +464,7 @@ cam_group = experiment_data["cam_group"]
 cam_group_reset = cam_group
 
 fig = plot_cams_and_points(
-    cam_group=cam_group,
-    points_3d=None,
-    title="Camera Extrinsics",
-    scene_aspect="data",
+    cam_group=cam_group, points_3d=None, title="Camera Extrinsics", scene_aspect="data",
 )
 
 # Get fundamental matrix
@@ -451,11 +493,7 @@ app.layout = html.Div(
         A GUI for specifying camera parameter initializations.
     """
         ),
-        dcc.Dropdown(
-            id="cam-dropdown",
-            options=dropdown_options,
-            value="2",
-        ),
+        dcc.Dropdown(id="cam-dropdown", options=dropdown_options, value="2",),
         html.Div(
             html.Button(
                 "Bundle-Adjust",
@@ -482,9 +520,7 @@ app.layout = html.Div(
                         value=0,
                         vertical=True,
                     ),
-                    style={
-                        "float": "left",
-                    },
+                    style={"float": "left",},
                 ),
                 html.Div(
                     div_images,
@@ -533,10 +569,7 @@ app.layout = html.Div(
             className="row",
         ),
         html.Div(trans_sliders, style={"float": "bottom", "marginTop": 500}),
-        html.Div(
-            rot_sliders,
-            style={"float": "bottom", "marginTop": 20},
-        ),
+        html.Div(rot_sliders, style={"float": "bottom", "marginTop": 20},),
         html.Button("Triangulate", id="triangulate-button", n_clicks=0),
         html.Div(
             html.Button("Write params to file", id="write-button", n_clicks=0),
@@ -572,8 +605,7 @@ app.layout = html.Div(
 
 
 @app.callback(
-    Output("write-out", "children"),
-    [Input("write-button", "n_clicks")],
+    Output("write-out", "children"), [Input("write-button", "n_clicks")],
 )
 def params_out(n_clicks):
     """Write parameters to file"""
@@ -582,8 +614,7 @@ def params_out(n_clicks):
 
 
 @app.callback(
-    Output("plot-out", "children"),
-    [Input("plot-button", "n_clicks")],
+    Output("plot-out", "children"), [Input("plot-button", "n_clicks")],
 )
 def save_skeleton(n_clicks):
     """Write parameters to file"""
@@ -667,10 +698,7 @@ def save_skeleton(n_clicks):
                     ]
                 ),
                 zaxis=dict(
-                    range=[
-                        np.nanmin(POINTS_3D[:, 2]),
-                        np.nanmax(POINTS_3D[:, 2]),
-                    ]
+                    range=[np.nanmin(POINTS_3D[:, 2]), np.nanmax(POINTS_3D[:, 2]),]
                 ),
             )
         )
@@ -687,8 +715,7 @@ def save_skeleton(n_clicks):
 
 
 @app.callback(
-    Output("reproj-out", "children"),
-    [Input("reproj-button", "n_clicks")],
+    Output("reproj-out", "children"), [Input("reproj-button", "n_clicks")],
 )
 def save_reproj(n_clicks):
     """Write parameters to file"""
@@ -718,8 +745,7 @@ def save_reproj(n_clicks):
 
 
 @app.callback(
-    Output("traces-out", "children"),
-    [Input("traces-button", "n_clicks")],
+    Output("traces-out", "children"), [Input("traces-button", "n_clicks")],
 )
 def save_traces(n_clicks):
     if POINTS_3D is None:
@@ -732,9 +758,15 @@ def save_traces(n_clicks):
 
     figsize = (40, 20)
 
-    tPlot, axes = plt.subplots(nrows=num_cameras, ncols=num_bodyparts, sharex=False, sharey=False, figsize=figsize)
+    tPlot, axes = plt.subplots(
+        nrows=num_cameras,
+        ncols=num_bodyparts,
+        sharex=False,
+        sharey=False,
+        figsize=figsize,
+    )
 
-    tPlot.suptitle('Traces', fontsize=20)
+    tPlot.suptitle("Traces", fontsize=20)
 
     plot_dir = Path("./traces")
     plot_dir.mkdir(exist_ok=True, parents=True)
@@ -742,37 +774,47 @@ def save_traces(n_clicks):
     for view in range(points_2d_og.shape[0]):
         for bp in range(points_2d_og.shape[2]):
             color = color_list[bp]
-            axes[view, bp].plot(points_2d_reproj[view, :, bp, 0], color='blue', label='reprojection')
-            axes[view, bp].plot(points_2d_og[view, :, bp, 0], color='red', label='DLC/DGP output')
-            axes[view, bp].plot((0, 0), label='bodypart color', color=color)
-            axes[view, bp].set_ylabel('x')
-            axes[view, bp].set_xlabel('frame')
+            axes[view, bp].plot(
+                points_2d_reproj[view, :, bp, 0], color="blue", label="reprojection"
+            )
+            axes[view, bp].plot(
+                points_2d_og[view, :, bp, 0], color="red", label="DLC/DGP output"
+            )
+            axes[view, bp].plot((0, 0), label="bodypart color", color=color)
+            axes[view, bp].set_ylabel("x")
+            axes[view, bp].set_xlabel("frame")
             leg = axes[view, bp].legend()
             for line in leg.get_lines():
                 line.set_linewidth(6.0)
-            axes[view, bp].title.set_text(f'view {view + 1}, {config.bp_names[bp]}')
+            axes[view, bp].title.set_text(f"view {view + 1}, {config.bp_names[bp]}")
             count += 1
 
     tPlot.savefig(str(plot_dir / "point_traces.png"))
 
     # Now repeat for likelihoods
     if np.sum(~np.isnan(likelihoods)) > 0:
-        tPlot, axes = plt.subplots(nrows=num_cameras, ncols=num_bodyparts, sharex=False, sharey=False, figsize=figsize)
+        tPlot, axes = plt.subplots(
+            nrows=num_cameras,
+            ncols=num_bodyparts,
+            sharex=False,
+            sharey=False,
+            figsize=figsize,
+        )
 
-        tPlot.suptitle('Confidences', fontsize=20)
+        tPlot.suptitle("Confidences", fontsize=20)
 
         count = 0
         for view in range(likelihoods.shape[0]):
             for bp in range(likelihoods.shape[2]):
                 color = color_list[bp]
-                axes[view, bp].plot(likelihoods[view, :, bp], color='blue')
-                axes[view, bp].plot((0, 0), label='bodypart color', color=color)
-                axes[view, bp].set_ylabel('likelihood')
-                axes[view, bp].set_xlabel('frame')
+                axes[view, bp].plot(likelihoods[view, :, bp], color="blue")
+                axes[view, bp].plot((0, 0), label="bodypart color", color=color)
+                axes[view, bp].set_ylabel("likelihood")
+                axes[view, bp].set_xlabel("frame")
                 leg = axes[view, bp].legend()
                 for line in leg.get_lines():
                     line.set_linewidth(6.0)
-                axes[view, bp].title.set_text(f'view {view + 1}, {config.bp_names[bp]}')
+                axes[view, bp].title.set_text(f"view {view + 1}, {config.bp_names[bp]}")
                 count += 1
 
         tPlot.savefig(str(plot_dir / "point_confidences.png"))
@@ -780,8 +822,7 @@ def save_traces(n_clicks):
 
 
 @app.callback(
-    Output("points-out", "children"),
-    [Input("points-button", "n_clicks")],
+    Output("points-out", "children"), [Input("points-button", "n_clicks")],
 )
 def save_points(n_clicks):
     global config
@@ -791,10 +832,10 @@ def save_points(n_clicks):
         return None
     if len(POINTS_3D.shape) < 3:
         points_3d = POINTS_3D.reshape(num_frames, num_bodyparts, 3)
-    points_dir = Path('./points').resolve()
+    points_dir = Path("./points").resolve()
     points_dir.mkdir(parents=True, exist_ok=True)
     df = points3d_arr_to_df(points_3d, config.bp_names)
-    df.to_csv(points_dir / f'{Path(args.config).stem}_3d.csv')
+    df.to_csv(points_dir / f"{Path(args.config).stem}_3d.csv")
 
 
 '''
@@ -820,9 +861,7 @@ def update_focal(focal_length):
         dash.dependencies.Output("y-rotate", "value"),
         dash.dependencies.Output("z-rotate", "value"),
     ],
-    [
-        dash.dependencies.Input("cam-dropdown", "value"),
-    ],
+    [dash.dependencies.Input("cam-dropdown", "value"),],
 )
 def update_sliders(cam_val):
     """Update slider values to match selected camera"""
@@ -928,10 +967,7 @@ def update_fig(
 
     if n_clicks_reset != N_CLICKS_RESET:
         cam_group = cam_group_reset
-        new_fig = plot_cams_and_points(
-            cam_group=cam_group,
-            points_3d=None,
-        )
+        new_fig = plot_cams_and_points(cam_group=cam_group, points_3d=None,)
         N_CLICKS_RESET = n_clicks_reset
 
     # This means we must triangualte
@@ -978,15 +1014,9 @@ def update_fig(
         else:
             div_images = make_div_images([i[frame_i] for i in path_images])
 
-            new_fig = plot_cams_and_points(
-                cam_group=cam_group,
-                points_3d=None,
-            )
+            new_fig = plot_cams_and_points(cam_group=cam_group, points_3d=None,)
 
-            skel_fig = plot_cams_and_points(
-                cam_group=None,
-                points_3d=None,
-            )
+            skel_fig = plot_cams_and_points(cam_group=None, points_3d=None,)
 
     fig = go.Figure(data=new_fig["data"], layout=fig["layout"])
 
@@ -1038,15 +1068,13 @@ def update_fig(
         div_images,
     )
 
+
 # ------------------------------------------------------------
 
 
 def plot_points(points_3d, frame_i):
     global cam_group
-    new_fig = plot_cams_and_points(
-        cam_group=cam_group,
-        points_3d=POINTS_3D,
-    )
+    new_fig = plot_cams_and_points(cam_group=cam_group, points_3d=POINTS_3D,)
     slice_3d = get_points_at_frame(POINTS_3D, frame_i)
     skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
 

@@ -14,7 +14,15 @@ from time import time
 # ToDo: make more general!! especially paths.
 
 
-def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None, bp_to_keep=None):
+def get_data(
+    img_settings,
+    dlc_file,
+    save_arrays=False,
+    chunksize=None,
+    bp_to_keep=None,
+    start_idx=0,
+    nrows=None,
+):
 
     # data_dir is e.g., Joao's folder with .json, folders per view, and a .csv dlc file
     # data_dir = Path(data_dir).resolve()  # assuming you run from preprocessing folder
@@ -40,12 +48,10 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None, bp_to_ke
     #     "/Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/Sawtell-data/fish_tracking"
     # ).resolve()
     print("Reading CSV...")
-    if chunksize is None:
-        dlc_data = pd.read_csv(
-            dlc_file, nrows=1000
-        )  # ToDo: that's just for testing, remove.
+    if chunksize is None or nrows is not None:
+        dlc_data = pd.read_csv(dlc_file, skiprows=range(1, start_idx), nrows=nrows)
     else:
-        dlc_data = pd.read_csv(dlc_file, chunksize=chunksize)
+        dlc_data = pd.read_csv(dlc_file, chunksize=chunksize, skiprows=range(1, start_idx))
         dlc_data = pd.concat([i for i in tqdm(dlc_data)], ignore_index=True)
 
     worm_colnames = dlc_data.columns[dlc_data.columns.str.contains("worm")]
@@ -57,7 +63,6 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None, bp_to_ke
 
     # points are (num_frames, 3 * num_bodyparts)
     dlc_points = np.asarray(dlc_data)[:, 1:]
-
     # Find x,y columns
     columns = list(dlc_data.columns)[1:]
     pts_array = np.empty((dlc_points.shape[0], int(dlc_points.shape[1] / 3), 2))
@@ -74,7 +79,6 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None, bp_to_ke
             y_points.append(dlc_points[:, i])
         elif name.endswith("confidence"):
             confidences.append(dlc_points[:, i])
-
     x_points = np.asarray(x_points).transpose()[:, :, np.newaxis]
     y_points = np.asarray(y_points).transpose()[:, :, np.newaxis]
     confidences = np.asarray(confidences).transpose()

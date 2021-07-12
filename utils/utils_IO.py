@@ -240,6 +240,21 @@ def sorted_alphanumeric(data):
     return sorted(data, key=alphanum_key)
 
 
+def read_frame_at_idx(video_path, frame_idx):
+    vidcap = cv2.VideoCapture(str(video_path))
+    count = 0
+    success = True
+    while success:
+        success, image = vidcap.read()
+        if count >= frame_idx:
+            return image
+        count += 1
+
+    if count < frame_idx:
+        print(f"Request frame {frame_idx} is too large")
+        return None
+
+
 def write_video(
     frames=None, image_dir=None, out_file="./out.mp4", fps=5, add_text=False
 ):
