@@ -119,61 +119,6 @@ def get_data(
     if bp_to_keep == None:
         bp_to_keep = []
 
-    """
-    bp_to_keep = [
-        "head",
-        "chin_base",
-        "chin1_4",
-        "chin_half",
-        "chin3_4",
-        "chin_tip",
-        "mid",
-        "fork",
-        "stripeA",
-        "stripeP",
-        "tail_neck",
-        "dorsal",
-        "anal",
-        "caudal_d",
-        "caudal_v",
-        "pectoral_L",
-        "pectoral_R",
-        "pelvic_L",
-        "pelvic_R",
-        "worm_1",
-        "worm_2",
-        "worm_3",
-        "worm_4",
-        "worm_5",
-        "pectoral_L_base",
-        "pectoral_R_base",
-        "pelvic_L_base",
-        "pelvic_R_base",
-    ]
-    """
-
-    """
-    bp_to_keep = [
-        "head",
-        "chin_base",
-        "chin1_4",
-        "chin_half",
-        "chin3_4",
-        "chin_tip",
-        "mid",
-        "tail_neck",
-        "caudal_d",
-        "caudal_v",
-        "worm_1",
-        "worm_2",
-        "worm_3",
-        "worm_4",
-        "worm_5",
-    ]
-    """
-
-    # bp_to_keep = []
-
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
 
