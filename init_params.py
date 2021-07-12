@@ -52,13 +52,6 @@ def get_args():
 
     parser.add_argument("--skip_frame", default=None, type=int, help="frame to skip")
     parser.add_argument(
-        "--point_sizes",
-        default=7,
-        type=int,
-        nargs="+",
-        help="sizes of points in each view",
-    )
-    parser.add_argument(
         "--equal_size", action="store_true", help="equalize reprojection images"
     )
 
@@ -423,7 +416,7 @@ num_frames = experiment_data["num_frames"]
 
 downsampling = args.downsampling
 plot_epipolar = args.plot_epipolar
-point_sizes = args.point_sizes
+point_sizes = config.point_sizes
 if isinstance(point_sizes, int):
     point_sizes = [point_sizes] * num_cameras
 equal_size = args.equal_size

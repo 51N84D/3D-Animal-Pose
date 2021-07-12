@@ -30,34 +30,37 @@ point_sizes: 4
 bp_names:
 - head
 - chin_base
-- chin_1_4
-- chin_mid
-- chin_3_4
-- chin_end
+- chin1_4
+- chin_half
+- chin3_4
+- chin_tip
 - mid
-- tail
+- tail_neck
 - caudal_d
 - caudal_v
-- worm_1
-- worm_2
-- worm_3
-- worm_4
-- worm_5
+- pectoral_L
+- pectoral_R
+- pectoral_L_base
+- pectoral_R_base
+#- worm_1
+#- worm_2
+#- worm_3
+#- worm_4
+#- worm_5
+
+
 
 skeleton:
-- [caudal_d, tail]
-- [caudal_v, tail]
-- [tail, mid]
-- [mid, head]
-- [head, chin_base]
-- [chin_base, chin_1_4]
-- [chin_1_4, chin_mid]
-- [chin_mid, chin_3_4]
-- [chin_3_4, chin_end]
-- [worm_1, worm_2]
-- [worm_2, worm_3]
-- [worm_3, worm_4]
-- [worm_4, worm_5]
+  - [chin_base, head]
+  - [chin1_4, chin_base]
+  - [chin_half, chin1_4]
+  - [chin3_4, chin_half]
+  - [chin_tip, chin3_4]
+  - [mid, head]
+  # - [worm_1, worm_2]
+  # - [worm_2, worm_3]
+  # - [worm_3, worm_4]
+  # - [worm_4, worm_5]
 
 color_list:
 - blue
@@ -74,4 +77,8 @@ color_list:
 - yellow
 - yellow
 - yellow
-- yellow
+
+view_names:
+  - top
+  - main
+  - right
