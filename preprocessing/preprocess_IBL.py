@@ -59,12 +59,12 @@ def get_args():
         type=str,
         default="./ibl_videos_aligned",
     )
-
     parser.add_argument(
-        "--select_subset",
-        type=int,
-        help="Number of frames to select"
+        "--save_frames",
+        action="store_true",
     )
+
+    parser.add_argument("--select_subset", type=int, help="Number of frames to select")
 
     return parser.parse_args()
 
@@ -89,7 +89,14 @@ def select_occluded_frames(likelihoods, threshold=0.9, padding=5):
     return padded_indices, occluded_dict
 
 
-def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset=None):
+def get_data(
+    raw_data_dir,
+    times_path,
+    write_dir,
+    flip_right=True,
+    select_subset=None,
+    save_frames=False,
+):
     """Return pandas df and"""
 
     raw_data_dir = Path(raw_data_dir).resolve()
@@ -97,16 +104,26 @@ def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset
     write_dir = Path(write_dir)
     write_dir.mkdir(exist_ok=True, parents=True)
 
-    
     session_eids = [
-        "7a887357-850a-4378-bd2a-b5bc8bdd3aac",
+        # "7a887357-850a-4378-bd2a-b5bc8bdd3aac",
         "6c6983ef-7383-4989-9183-32b1a300d17a",
-        "88d24c31-52e4-49cc-9f32-6adbeb9eba87",
-        "81a78eac-9d36-4f90-a73a-7eb3ad7f770b",
-        "cde63527-7f5a-4cc3-8ac2-215d82e7da26",
+        # "88d24c31-52e4-49cc-9f32-6adbeb9eba87",
+        # "81a78eac-9d36-4f90-a73a-7eb3ad7f770b",
+        # "cde63527-7f5a-4cc3-8ac2-215d82e7da26",
     ]
 
+    if save_frames:
+        frames_dir = write_dir / "frames"
+        frames_dir.mkdir(exist_ok=True, parents=True)
+
     for session_eid in session_eids:
+        if save_frames:
+            session_frames = frames_dir / session_eid
+            session_frames.mkdir(exist_ok=True, parents=True)
+            left_session_frames = session_frames / "left"
+            left_session_frames.mkdir(exist_ok=True, parents=True)
+            right_session_frames = session_frames / "right"
+            right_session_frames.mkdir(exist_ok=True, parents=True)
 
         # Exctract eid of interest
         all_videos = os.listdir(raw_data_dir)
@@ -181,17 +198,17 @@ def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset
                     times_right = np.load(right_time_path)
 
         left_points_arr = left_points_arr[:select_subset]
+        times_left = times_left[: left_points_arr.shape[0]]
+        times_right = times_right[: right_points_arr.shape[0]]
 
         interpolater = interp1d(
             times_right,
             np.arange(len(times_right)),
-            kind="cubic",
+            kind="nearest",
             fill_value="extrapolate",
         )
 
         idx_aligned = np.round(interpolater(times_left[:select_subset])).astype(np.int)
-
-        # idx_aligned_original = deepcopy(idx_aligned)
         right_points_arr = right_points_arr[idx_aligned, :, :]
         right_confs = right_confs[idx_aligned, :]
 
@@ -216,7 +233,10 @@ def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset
 
         while success:
             if count in idx_aligned:
-                right_out_vid.write(np.flip(image, axis=1))
+                for _ in range(np.count_nonzero(idx_aligned == count)):
+                    right_out_vid.write(np.flip(image, axis=1))
+                    if save_frames:
+                        cv2.imwrite(str(right_session_frames / f"{count}.png"), image)
             success, image = right_cap.read()
             count += 1
 
@@ -230,11 +250,13 @@ def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset
             fps=left_fps,
             frameSize=left_size,
         )
+        
         count = 0
-
         while success:
             left_out_vid.write(image)
             success, image = left_cap.read()
+            if save_frames:
+                cv2.imwrite(str(left_session_frames / f"{count}.png"), image)
             count += 1
             if count >= select_subset:
                 break
@@ -277,4 +299,4 @@ def get_data(raw_data_dir, times_path, write_dir, flip_right=True, select_subset
 
 if __name__ == "__main__":
     args = get_args()
-    get_data(args.raw_data_dir, args.timestamps, args.write_dir)
+    get_data(args.raw_data_dir, args.timestamps, args.write_dir, save_frames=args.save_frames)
