@@ -10,13 +10,14 @@ import commentjson
 import argparse
 from tqdm import tqdm
 from time import time
+
 # ToDo: make more general!! especially paths.
 
 
-def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
+def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None, bp_to_keep=None):
 
     # data_dir is e.g., Joao's folder with .json, folders per view, and a .csv dlc file
-    #data_dir = Path(data_dir).resolve()  # assuming you run from preprocessing folder
+    # data_dir = Path(data_dir).resolve()  # assuming you run from preprocessing folder
     # filename = data_dir / "tank_dataset_5.h5"
     # f = h5py.File(filename, "r")
     # print("-------------DATASET INFO--------------")
@@ -28,11 +29,11 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
     # print("skeleton_names: ", f["skeleton_names"])
     # print("----------------------------------------")
 
-    '''
+    """
     img_settings = commentjson.load(
         open(str(img_settings_path), "r")
     )  # ToDo: the path in the json doesn't make sense
-    '''
+    """
     num_cameras = len(img_settings["height_lims"])
 
     # data_dir = Path(
@@ -44,9 +45,7 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
             dlc_file, nrows=1000
         )  # ToDo: that's just for testing, remove.
     else:
-        dlc_data = pd.read_csv(
-            dlc_file, chunksize=chunksize
-        ) 
+        dlc_data = pd.read_csv(dlc_file, chunksize=chunksize)
         dlc_data = pd.concat([i for i in tqdm(dlc_data)], ignore_index=True)
 
     worm_colnames = dlc_data.columns[dlc_data.columns.str.contains("worm")]
@@ -54,6 +53,7 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
     dlc_data.columns = dlc_data.columns.str.replace("worm_front_", "worm_1_")
     dlc_data.columns = dlc_data.columns.str.replace("worm_right", "worm_")
     dlc_data.columns = dlc_data.columns.str.replace("worm_front", "worm_")
+    worm_colnames = dlc_data.columns[dlc_data.columns.str.contains("worm")]
 
     # points are (num_frames, 3 * num_bodyparts)
     dlc_points = np.asarray(dlc_data)[:, 1:]
@@ -111,11 +111,62 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
     assert len(view_names) == num_cameras
 
     # NOTE: Empty list keeps all bodyparts
-    # bp_to_keep = ["head", "mid", "pectoral"]  # ["head", "chin"]
-    # bp_to_keep = ["chin", "mid", "head", "caudal", "tail"]
-    bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail", "worm"]
-    #bp_to_keep = ["chin", "chin1", "chin3", "mid", "head", "caudal", "tail"]
 
+    if bp_to_keep == None:
+        bp_to_keep = []
+
+    """
+    bp_to_keep = [
+        "head",
+        "chin_base",
+        "chin1_4",
+        "chin_half",
+        "chin3_4",
+        "chin_tip",
+        "mid",
+        "fork",
+        "stripeA",
+        "stripeP",
+        "tail_neck",
+        "dorsal",
+        "anal",
+        "caudal_d",
+        "caudal_v",
+        "pectoral_L",
+        "pectoral_R",
+        "pelvic_L",
+        "pelvic_R",
+        "worm_1",
+        "worm_2",
+        "worm_3",
+        "worm_4",
+        "worm_5",
+        "pectoral_L_base",
+        "pectoral_R_base",
+        "pelvic_L_base",
+        "pelvic_R_base",
+    ]
+    """
+
+    """
+    bp_to_keep = [
+        "head",
+        "chin_base",
+        "chin1_4",
+        "chin_half",
+        "chin3_4",
+        "chin_tip",
+        "mid",
+        "tail_neck",
+        "caudal_d",
+        "caudal_v",
+        "worm_1",
+        "worm_2",
+        "worm_3",
+        "worm_4",
+        "worm_5",
+    ]
+    """
 
     # bp_to_keep = []
 
@@ -123,20 +174,20 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
         multiview_name_to_idx[view_name] = []
 
     new_skeleton_names = []
+    bodypart_names_without_view = []
     for idx, name in enumerate(
         skeleton_names
     ):  # was prev f["skeleton_names"] building on the labels data.
         if len(bp_to_keep) > 0:
             skip_bp = True
             for bp in bp_to_keep:
-                if (
-                    bp == name.split("_")[0]
-                ):  # bp == name.decode("UTF-8").split("_")[0]:
+                if bp == "_".join(name.split("_")[:-1]):
                     skip_bp = False
             if skip_bp:
                 continue
-
         new_skeleton_names.append(name)
+        if "_".join(name.split("_")[:-1]) not in bodypart_names_without_view:
+            bodypart_names_without_view.append("_".join(name.split("_")[:-1]))
         for view_name in view_names:
             if view_name in name.split("_")[-1]:  # name.decode("UTF-8").split("_")[-1]:
                 multiview_idx_to_name[idx] = view_name
@@ -163,8 +214,13 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
         pts_array_2d_joints[i, :, :, :] = view_points
 
         confidences_bp[i, :, :] = confidences[:, view_indices]
+    print("------------BODYPARTS-------------------")
 
-    '''
+    print(len(new_skeleton_names))
+    print("pts_array_2d_joints: ", pts_array_2d_joints.shape)
+    print(bodypart_names_without_view)
+    print("------------BODYPARTS-------------------")
+    """
     points_path = data_dir / "2d_points_array.npy"
     conf_path = data_dir / "2d_confidences_array.npy"
 
@@ -172,7 +228,8 @@ def get_data(img_settings, dlc_file, save_arrays=False, chunksize=None):
     if save_arrays:
         np.save(points_path, pts_array_2d_joints)
         np.save(conf_path, confidences_bp)
-    '''
+    """
+
     return pts_array_2d_joints, confidences_bp, img_settings
 
 

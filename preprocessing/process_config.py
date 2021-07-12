@@ -107,7 +107,7 @@ def read_yaml(path_to_yaml, csv_type):
         likelihoods = np.asarray(likelihoods)
 
     elif csv_type == "sawtell":
-        from preprocessing.preprocess_Sawtell_DLC import get_data
+        from preprocessing.preprocess_Sawtell import get_data
 
         assert config.mirrored
 
@@ -117,6 +117,7 @@ def read_yaml(path_to_yaml, csv_type):
             dlc_file=path_to_csvs[0],
             save_arrays=False,
             chunksize=10000,
+            bp_to_keep=config.bp_names
         )
     else:
         raise ValueError(f"csv_type {csv_type} is invalid.")
