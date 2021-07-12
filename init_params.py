@@ -138,13 +138,12 @@ def reproject_points(points_3d, cam_group):
 def get_skeleton_parts(slice_3d):
 
     global config
-
     skeleton_bp = {}
-
     for i in range(slice_3d.shape[0]):
         skeleton_bp[config.bp_names[i]] = tuple(slice_3d[i, :])
     skeleton_lines = config.skeleton
 
+    print()
     return skeleton_bp, skeleton_lines
 
 
@@ -433,7 +432,8 @@ if "frame_paths" in experiment_data.keys():
     path_images = experiment_data["frame_paths"]
 
 split_images_path = Path("./split_images").resolve()
-shutil.rmtree(split_images_path)
+if split_images_path.exists():
+    shutil.rmtree(split_images_path)
 
 """
 if split_images_path.exists():
