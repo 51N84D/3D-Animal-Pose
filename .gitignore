@@ -10,9 +10,9 @@ data
 params.json
 reprojections/
 traces/
-configs/
 results/
 analysis/
+points/
 
 # plots
 *.jpg

@@ -2,7 +2,9 @@
 3D pose prediction with multiple cameras and bundle adjustment
 
 To create the necessary conda environment, run
-`conda env create -f bundle-adjust.yml`
+`conda env create -f requirements.yml`
+
+The above will create a conda environment called `3d-pose`, which you should `conda activate` before proceeding.
 
 # NOTE: This is a work in progress
 We appreciate any kind of feedback. Open an issue or send a message, and we'll try our best to implement that feedback

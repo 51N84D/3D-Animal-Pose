@@ -2,6 +2,7 @@ name: 3d-pose
 channels:
   - defaults
 dependencies:
+  - dash
   - ca-certificates=2021.1.19=hecd8cb5_1
   - certifi=2020.12.5=py39hecd8cb5_0
   - libcxx=10.0.0=1
