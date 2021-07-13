@@ -527,7 +527,12 @@ def reconstruct_points(
     save_bad_frames=True,
     reproj_thresh=2,
 ):
-    experiment_data = read_yaml(config, csv_type=csv_type)
+    # ind_start, nrows=ind_end - ind_start
+    start_idx = 186450
+    nrows = 500
+    experiment_data = read_yaml(
+        config, csv_type=csv_type, start_idx=start_idx, nrows=nrows
+    )
     cam_group = experiment_data["cam_group"]
     num_frames = experiment_data["num_frames"]
     num_bodyparts = experiment_data["num_bodyparts"]
@@ -606,7 +611,7 @@ def reconstruct_points(
     else:
         num_partition = int(points_2d_joints.shape[1] / num_triang_frames)
 
-    print('num_partition: ', num_partition)
+    print("num_partition: ", num_partition)
     r = points_2d_joints.shape[1] - (num_triang_frames * num_partition)
     if r > 0:
         points_2d_split = np.split(
@@ -653,6 +658,11 @@ def reconstruct_points(
     save_dict["predictions"] = {}
     save_dict["reprojections"] = {}
     save_dict["BA"] = {}
+    save_dict["points_3d"] = points_3d
+    save_dict["cam_group"] = cam_group
+    save_dict["config"] = config
+    save_dict["start_idx"] = start_idx
+    save_dict["nrows"] = nrows
 
     print("-------------------SAVING AS DICT---------------------")
     for view_idx in range(points_2d_joints.shape[0]):
@@ -677,7 +687,7 @@ def reconstruct_points(
 
     print("------------------------------------------------------")
     # NOTE: Not saving reprojections here
-    '''
+    """
     print("####################################")
     print("extracting frames")
     print("####################################")
@@ -741,7 +751,7 @@ def reconstruct_points(
     # -------------------------------------------------------
 
     # save_skeleton(points_3d, config, cam_group, points_2d_joints, output_dir)
-    '''
+    """
 
     """
     print("Writing bad frames...")

@@ -292,10 +292,7 @@ def plot_image_labels(
 
         if label_list is not None:
             ax.scatter(
-                x_coord,
-                y_coord,
-                color=color_list[i],
-                label=label_list[i],
+                x_coord, y_coord, color=color_list[i], label=label_list[i],
             )
         else:
             ax.scatter(x_coord, y_coord, color=color_list[i])
@@ -331,11 +328,13 @@ def vector_plot(
     tvects,
     is_vect=True,
     orig=[0, 0, 0],
-    names=["x", "y", "z"],
+    # names=["x", "y", "z"],
+    names=["", "", ""],
     cam_name="",
     colors=["red", "blue", "green"],
 ):
     """Plot vectors using plotly"""
+
 
     if is_vect:
         if not hasattr(orig[0], "__iter__"):
@@ -366,7 +365,9 @@ def vector_plot(
     # fig.show()
 
 
-def draw_circles(img, points, point_colors=None, point_size=10, marker_type=None, thickness=-1):
+def draw_circles(
+    img, points, point_colors=None, point_size=10, marker_type=None, thickness=-1
+):
 
     if point_colors is not None:
         if not isinstance(point_colors, list):
@@ -380,8 +381,8 @@ def draw_circles(img, points, point_colors=None, point_size=10, marker_type=None
             color = (255, 255, 255)
 
         if marker_type is not None:
-            assert marker_type in ('cross', 'diamond', 'square')
-            if marker_type == 'cross':
+            assert marker_type in ("cross", "diamond", "square")
+            if marker_type == "cross":
                 marker = cv2.MARKER_CROSS
 
             cv2.drawMarker(
@@ -481,6 +482,7 @@ def plot_cams_and_points(
     legend=False,
     font_size=15,
     plot_names=False,
+    cam_names=None
 ):
     """
     Plots the coordinate systems of the cameras along with the 3D points
@@ -503,11 +505,15 @@ def plot_cams_and_points(
     if cam_group is not None:
         for i, cam in enumerate(cam_group.cameras):
             rot_vec = R.from_rotvec(cam.get_rotation())
-            R_mat = rot_vec.as_matrix()
+            R_mat = rot_vec.as_matrix() * 0.2
             t = cam.get_translation()
 
+            if cam_names is None:
+                cam_name = f"cam_{i+1}"
+            else:
+                cam_name = cam_names[i]
             data += vector_plot(
-                [R_mat[:, 0], R_mat[:, 1], R_mat[:, 2]], orig=t, cam_name=f"cam_{i+1}"
+                [R_mat[:, 0], R_mat[:, 1], R_mat[:, 2]], orig=t, cam_name=cam_name
             )
     if skeleton_bp is not None and skeleton_lines is not None:
         for i, line in enumerate(skeleton_lines):
@@ -523,7 +529,7 @@ def plot_cams_and_points(
                 if line_colors is not None:
                     color = [line_colors[i]]
                 else:
-                    color = ["red"]
+                    color = ["gray"]
 
                 cam_name = to_bp if plot_names else ""
                 # names = [from_bp]
@@ -575,9 +581,7 @@ def plot_cams_and_points(
             ),
         )
     else:
-        layout = go.Layout(
-            margin=dict(l=0, r=0, b=0, t=0),
-        )
+        layout = go.Layout(margin=dict(l=0, r=0, b=0, t=0),)
 
     fig = go.Figure(data=data, layout=layout)
     fig.update_traces(textfont_size=font_size)
