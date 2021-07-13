@@ -3,6 +3,7 @@ channels:
   - defaults
 dependencies:
   - dash
+  - plotly
   - ca-certificates=2021.1.19=hecd8cb5_1
   - certifi=2020.12.5=py39hecd8cb5_0
   - libcxx=10.0.0=1
@@ -28,7 +29,7 @@ dependencies:
     - opencv-python==4.5.1.48
     - pandas==1.2.3
     - pillow==8.1.2
-    - plotly==4.14.3
+    #- plotly==4.14.3
     - pyparsing==2.4.7
     - python-dateutil==2.8.1
     - pytz==2021.1
@@ -37,5 +38,8 @@ dependencies:
     - scipy==1.6.2
     - six==1.15.0
     - tqdm==4.59.0
+    - commentjson
+    - psutil
+    - requests
 prefix: /Users/Sunsmeister/opt/anaconda3/envs/3d-pose
 

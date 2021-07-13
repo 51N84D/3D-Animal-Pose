@@ -27,3 +27,4 @@ points/
 # checkpoints
 *.DS_Store
 *.ipynb_checkpoints
+.idea/

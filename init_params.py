@@ -632,7 +632,7 @@ def save_skeleton(n_clicks):
             continue
         plot_dir = Path("./3D_plots")
         plot_dir.mkdir(exist_ok=True, parents=True)
-        slice_3d = get_points_at_frame(POINTS_3D, i=frame_i)
+        slice_3d = get_points_at_frame(POINTS_3D, i=frame_i-ind_start) # Dan: subtracting ind_start to avoid exceeding POINTS_3D's shape
 
         if np.all(np.isnan(slice_3d)):
             slice_3d = np.zeros((1, 3))
@@ -729,7 +729,7 @@ def save_reproj(n_clicks):
         plot_dir.mkdir(exist_ok=True, parents=True)
 
         reproj_images = get_reproject_images(
-            points_2d_reproj, points_2d_og, path_images, i=frame_i
+            points_2d_reproj, points_2d_og, path_images, i=frame_i - ind_start
         )
         combined_proj = combine_images(reproj_images, equal_size=equal_size)
         cv2.imwrite(str(plot_dir / f"reproj_{frame_i}.jpg"), combined_proj)

@@ -1,8 +1,8 @@
 path_to_videos:
-- /Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated.avi
+- /Volumes/sawtell-locker/C1/free/vids/20201104_Joao/concatenated.avi
 
 path_to_csv:
-- /Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv
+- /Volumes/sawtell-locker/C1/free/vids/20201104_Joao/concatenated_tracking.csv
 
 intrinsics:
   focal_length:
@@ -61,6 +61,10 @@ skeleton:
   - [worm_2, worm_3]
   - [worm_3, worm_4]
   - [worm_4, worm_5]
+  - [pectoral_L, pectoral_L_base]
+  - [pectoral_L_base, head]
+  - [pectoral_R, pectoral_R_base]
+  - [pectoral_R_base, head]
 
 color_list:
 - blue
