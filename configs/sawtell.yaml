@@ -38,17 +38,15 @@ bp_names:
 - tail_neck
 - caudal_d
 - caudal_v
-- worm_1
-- worm_2
-- worm_3
-- worm_4
-- worm_5
 - pectoral_L
 - pectoral_R
 - pectoral_L_base
 - pectoral_R_base
-
-
+#- worm_1
+#- worm_2
+#- worm_3
+#- worm_4
+#- worm_5
 
 skeleton:
   - [chin_base, head]
@@ -57,14 +55,17 @@ skeleton:
   - [chin3_4, chin_half]
   - [chin_tip, chin3_4]
   - [mid, head]
-  - [worm_1, worm_2]
-  - [worm_2, worm_3]
-  - [worm_3, worm_4]
-  - [worm_4, worm_5]
+  - [tail_neck, mid]
+  - [tail_neck, caudal_d]
+  - [tail_neck, caudal_v]
   - [pectoral_L, pectoral_L_base]
   - [pectoral_L_base, head]
   - [pectoral_R, pectoral_R_base]
   - [pectoral_R_base, head]
+#  - [worm_1, worm_2]
+#  - [worm_2, worm_3]
+#  - [worm_3, worm_4]
+#  - [worm_4, worm_5]
 
 color_list:
 - blue
@@ -77,15 +78,15 @@ color_list:
 - orange
 - green
 - green
-- yellow
-- yellow
-- yellow
-- yellow
-- yellow
 - purple
 - purple
-- green 
-- green
+- purple
+- purple
+#- yellow
+#- yellow
+#- yellow
+#- yellow
+#- yellow
 
 
 
