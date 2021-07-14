@@ -26,6 +26,20 @@ def get_args():
     parser.add_argument("--output_dir", type=str, required=True)
 
     parser.add_argument(
+        "--start_idx",
+        type=int,
+        default=0,
+        help="which frame to start with",
+    )
+
+    parser.add_argument(
+        "--num_frames_to_use",
+        type=int,
+        default=None,
+        help="which frame to start with",
+    )
+
+    parser.add_argument(
         "--num_ba_frames",
         default=5000,
         type=int,
@@ -523,13 +537,15 @@ def reconstruct_points(
     num_triang_frames=1000,
     downsample=1,
     csv_type="dlc",
+    start_idx=0,
+    nrows=None,
     chunksize=10000,
     save_bad_frames=True,
     reproj_thresh=2,
 ):
     # ind_start, nrows=ind_end - ind_start
-    start_idx = 186450
-    nrows = 500
+    #start_idx = 186450 # TODO: warning, this is a manual start index.
+    #nrows = 500
     experiment_data = read_yaml(
         config, csv_type=csv_type, start_idx=start_idx, nrows=nrows
     )
@@ -560,7 +576,7 @@ def reconstruct_points(
     else:
         points_filter = filter_zero_view_points(points_2d_joints)
 
-    np.save("./ibl_points_2d.npy", points_2d_joints)
+    np.save("./ibl_points_2d.npy", points_2d_joints) # TODO: remove, specific
     # Select the top 50% frames with highest likelihood
     num_high_conf = points_2d_joints.shape[1] // 2
     if num_high_conf < num_ba_frames:
@@ -682,7 +698,7 @@ def reconstruct_points(
                 save_dict["BA"][bp] = points_3d[:, bp_idx, :]
 
     # Store data (serialize)
-    with open("sawtell_points.pickle", "wb") as handle:
+    with open(output_dir / "reconstruction_results.pickle", "wb") as handle:
         pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     print("------------------------------------------------------")
@@ -832,4 +848,6 @@ if __name__ == "__main__":
         downsample=args.downsample,
         csv_type=args.csv_type,
         save_bad_frames=args.save_bad_frames,
+        start_idx=args.start_idx,
+        nrows=args.num_frames_to_use
     )
