@@ -583,7 +583,7 @@ def plot_cams_and_points(
     else:
         layout = go.Layout(margin=dict(l=0, r=0, b=0, t=0),)
 
-    fig = go.Figure(data=data, layout=layout)
+    fig = go.FigureWidget(data=data, layout=layout)
     fig.update_traces(textfont_size=font_size)
     fig.update_layout(scene_aspectmode=scene_aspect)
     fig.update_layout(scene_camera=scene_camera)

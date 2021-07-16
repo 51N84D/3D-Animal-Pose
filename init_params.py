@@ -35,6 +35,7 @@ from tqdm import tqdm
 import argparse
 import os
 import shutil
+import pdb
 
 
 pio.renderers.default = None
@@ -425,20 +426,23 @@ if "frame_paths" in experiment_data.keys():
     path_images = experiment_data["frame_paths"]
 
 split_images_path = Path("./split_images").resolve()
+
 if split_images_path.exists():
     shutil.rmtree(split_images_path)
 
-"""
+'''
+# TODO: This causes bad alignment between frames and points
 if split_images_path.exists():
     path_images = []
-    for view_idx, view_name in enumerate(os.listdir(str(split_images_path))):
+    for view_idx, view_name in enumerate(sorted(os.listdir(str(split_images_path)))):
         path_images.append([])
         view_dir = split_images_path / view_name
-        for img_idx, img_name in enumerate(os.listdir(str(view_dir))):
+        for img_idx, img_name in enumerate(sorted(os.listdir(str(view_dir)))):
             img_path = view_dir / img_name
             path_images[view_idx].append(img_path)
-"""
-# else:  # extract frames and make paths
+'''
+
+#else:  # extract frames and make paths
 indices = np.arange(ind_start, ind_end)
 frames = extract_frames(indices, experiment_data["video_paths"][0])
 split_frames, path_images = split_images(
@@ -447,6 +451,7 @@ split_frames, path_images = split_images(
     config.image_limits["width_lims"],
     write_path=split_images_path,
 )
+
 print("------------------------------------------------")
 
 color_list = config.color_list
@@ -457,7 +462,10 @@ cam_group = experiment_data["cam_group"]
 cam_group_reset = cam_group
 
 fig = plot_cams_and_points(
-    cam_group=cam_group, points_3d=None, title="Camera Extrinsics", scene_aspect="data",
+    cam_group=cam_group,
+    points_3d=None,
+    title="Camera Extrinsics",
+    scene_aspect="data",
 )
 
 # Get fundamental matrix
@@ -486,7 +494,11 @@ app.layout = html.Div(
         A GUI for specifying camera parameter initializations.
     """
         ),
-        dcc.Dropdown(id="cam-dropdown", options=dropdown_options, value="2",),
+        dcc.Dropdown(
+            id="cam-dropdown",
+            options=dropdown_options,
+            value="2",
+        ),
         html.Div(
             html.Button(
                 "Bundle-Adjust",
@@ -513,7 +525,9 @@ app.layout = html.Div(
                         value=0,
                         vertical=True,
                     ),
-                    style={"float": "left",},
+                    style={
+                        "float": "left",
+                    },
                 ),
                 html.Div(
                     div_images,
@@ -562,7 +576,10 @@ app.layout = html.Div(
             className="row",
         ),
         html.Div(trans_sliders, style={"float": "bottom", "marginTop": 500}),
-        html.Div(rot_sliders, style={"float": "bottom", "marginTop": 20},),
+        html.Div(
+            rot_sliders,
+            style={"float": "bottom", "marginTop": 20},
+        ),
         html.Button("Triangulate", id="triangulate-button", n_clicks=0),
         html.Div(
             html.Button("Write params to file", id="write-button", n_clicks=0),
@@ -598,7 +615,8 @@ app.layout = html.Div(
 
 
 @app.callback(
-    Output("write-out", "children"), [Input("write-button", "n_clicks")],
+    Output("write-out", "children"),
+    [Input("write-button", "n_clicks")],
 )
 def params_out(n_clicks):
     """Write parameters to file"""
@@ -607,7 +625,8 @@ def params_out(n_clicks):
 
 
 @app.callback(
-    Output("plot-out", "children"), [Input("plot-button", "n_clicks")],
+    Output("plot-out", "children"),
+    [Input("plot-button", "n_clicks")],
 )
 def save_skeleton(n_clicks):
     """Write parameters to file"""
@@ -632,12 +651,14 @@ def save_skeleton(n_clicks):
             continue
         plot_dir = Path("./3D_plots")
         plot_dir.mkdir(exist_ok=True, parents=True)
-        slice_3d = get_points_at_frame(POINTS_3D, i=frame_i-ind_start) # Dan: subtracting ind_start to avoid exceeding POINTS_3D's shape
+        slice_3d = get_points_at_frame(
+            POINTS_3D, i=frame_i - ind_start
+        )  # Dan: subtracting ind_start to avoid exceeding POINTS_3D's shape
 
         if np.all(np.isnan(slice_3d)):
             slice_3d = np.zeros((1, 3))
             skel_fig = plot_cams_and_points(
-                cam_group=None,
+                cam_group=cam_group,
                 points_3d=slice_3d,
                 point_size=0,
                 skeleton_bp=None,
@@ -647,7 +668,7 @@ def save_skeleton(n_clicks):
         else:
             skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
             skel_fig = plot_cams_and_points(
-                cam_group=None,
+                cam_group=cam_group,
                 points_3d=slice_3d,
                 point_size=5,
                 skeleton_bp=skeleton_bp,
@@ -691,7 +712,10 @@ def save_skeleton(n_clicks):
                     ]
                 ),
                 zaxis=dict(
-                    range=[np.nanmin(POINTS_3D[:, 2]), np.nanmax(POINTS_3D[:, 2]),]
+                    range=[
+                        np.nanmin(POINTS_3D[:, 2]),
+                        np.nanmax(POINTS_3D[:, 2]),
+                    ]
                 ),
             )
         )
@@ -708,7 +732,8 @@ def save_skeleton(n_clicks):
 
 
 @app.callback(
-    Output("reproj-out", "children"), [Input("reproj-button", "n_clicks")],
+    Output("reproj-out", "children"),
+    [Input("reproj-button", "n_clicks")],
 )
 def save_reproj(n_clicks):
     """Write parameters to file"""
@@ -738,7 +763,8 @@ def save_reproj(n_clicks):
 
 
 @app.callback(
-    Output("traces-out", "children"), [Input("traces-button", "n_clicks")],
+    Output("traces-out", "children"),
+    [Input("traces-button", "n_clicks")],
 )
 def save_traces(n_clicks):
     if POINTS_3D is None:
@@ -815,7 +841,8 @@ def save_traces(n_clicks):
 
 
 @app.callback(
-    Output("points-out", "children"), [Input("points-button", "n_clicks")],
+    Output("points-out", "children"),
+    [Input("points-button", "n_clicks")],
 )
 def save_points(n_clicks):
     global config
@@ -854,7 +881,9 @@ def update_focal(focal_length):
         dash.dependencies.Output("y-rotate", "value"),
         dash.dependencies.Output("z-rotate", "value"),
     ],
-    [dash.dependencies.Input("cam-dropdown", "value"),],
+    [
+        dash.dependencies.Input("cam-dropdown", "value"),
+    ],
 )
 def update_sliders(cam_val):
     """Update slider values to match selected camera"""
@@ -960,7 +989,10 @@ def update_fig(
 
     if n_clicks_reset != N_CLICKS_RESET:
         cam_group = cam_group_reset
-        new_fig = plot_cams_and_points(cam_group=cam_group, points_3d=None,)
+        new_fig = plot_cams_and_points(
+            cam_group=cam_group,
+            points_3d=None,
+        )
         N_CLICKS_RESET = n_clicks_reset
 
     # This means we must triangualte
@@ -1007,9 +1039,15 @@ def update_fig(
         else:
             div_images = make_div_images([i[frame_i] for i in path_images])
 
-            new_fig = plot_cams_and_points(cam_group=cam_group, points_3d=None,)
+            new_fig = plot_cams_and_points(
+                cam_group=cam_group,
+                points_3d=None,
+            )
 
-            skel_fig = plot_cams_and_points(cam_group=None, points_3d=None,)
+            skel_fig = plot_cams_and_points(
+                cam_group=cam_group,
+                points_3d=None,
+            )
 
     fig = go.Figure(data=new_fig["data"], layout=fig["layout"])
 
@@ -1067,12 +1105,15 @@ def update_fig(
 
 def plot_points(points_3d, frame_i):
     global cam_group
-    new_fig = plot_cams_and_points(cam_group=cam_group, points_3d=POINTS_3D,)
+    new_fig = plot_cams_and_points(
+        cam_group=cam_group,
+        points_3d=POINTS_3D,
+    )
     slice_3d = get_points_at_frame(POINTS_3D, frame_i)
     skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
 
     skel_fig = plot_cams_and_points(
-        cam_group=None,
+        cam_group=cam_group,
         points_3d=slice_3d,
         point_size=5,
         scene_aspect="cube",

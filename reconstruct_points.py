@@ -529,7 +529,7 @@ def reconstruct_points(
 ):
     # ind_start, nrows=ind_end - ind_start
     start_idx = 186450
-    nrows = 500
+    nrows = 2000
     experiment_data = read_yaml(
         config, csv_type=csv_type, start_idx=start_idx, nrows=nrows
     )
