@@ -31,14 +31,6 @@ def get_args():
         default=0,
         help="which frame to start with",
     )
-
-    parser.add_argument(
-        "--num_frames_to_use",
-        type=int,
-        default=None,
-        help="which frame to start with",
-    )
-
     parser.add_argument(
         "--num_ba_frames",
         default=5000,
@@ -77,6 +69,18 @@ def get_args():
         type=float,
         default=2,
         help="Threshold for reprojection errors to select bad frames",
+    )
+    parser.add_argument(
+        "--start_idx",
+        type=int,
+        default=186450,
+        help="Starting frame index for triangulation",
+    )
+    parser.add_argument(
+        "--nrows",
+        type=int,
+        default=2000,
+        help="Number of frames to triangulate",
     )
     # -------------------- Optional Dataset-dependent arguments -----------------------
     return parser.parse_args()
@@ -555,9 +559,15 @@ def reconstruct_points(
     chunksize=10000,
     save_bad_frames=True,
     reproj_thresh=2,
+    start_idx=0,
+    nrows=None
 ):
+<<<<<<< HEAD
 
     # here we're slicing the data to the desired indices
+=======
+    # ind_start, nrows=ind_end - ind_start
+>>>>>>> da768ec660226a02f5d3198ba880b0ca89498504
     experiment_data = read_yaml(
         config, csv_type=csv_type, start_idx=start_idx, nrows=nrows
     )
@@ -866,5 +876,5 @@ if __name__ == "__main__":
         csv_type=args.csv_type,
         save_bad_frames=args.save_bad_frames,
         start_idx=args.start_idx,
-        nrows=args.num_frames_to_use
+        nrows=args.nrows
     )
