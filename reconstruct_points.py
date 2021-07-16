@@ -81,6 +81,8 @@ def get_args():
     # -------------------- Optional Dataset-dependent arguments -----------------------
     return parser.parse_args()
 
+def find_str_index_in_list(test_list: list, test_str: str) -> int:
+    return np.where(np.asarray(test_list) == test_str)[0][0]
 
 def reproject_points(points_3d, cam_group):
 
@@ -107,6 +109,7 @@ def save_reproj(
     plot_dir,
     og_dims=None,
     img_settings=None,
+    config=None,
     write_frames=False,
 ):
     """Write parameters to file"""
@@ -122,6 +125,7 @@ def save_reproj(
             F,
             color_list,
             i=frame_i,
+            config=config,
         )
         if og_dims is None:
             combined_proj = combine_images(reproj_images, equal_size=True)
@@ -168,6 +172,7 @@ def get_reproject_images(
     is_arr=True,
     plot_epipolar=False,
     filter_points=False,
+    config=None,
 ):
     if len(path_images) > 2:
         points_filter = filter_view_points(points_2d_og)
@@ -209,6 +214,13 @@ def get_reproject_images(
         points_nonfilled[nonfilled_indices] = curr_points_2d_reproj[nonfilled_indices]
         points_filled[~nonfilled_indices] = curr_points_2d_reproj[~nonfilled_indices]
 
+        # draw skeleton lines
+        for ind, names in enumerate(config["skeleton"]):
+            pt1 = points_2d_og[cam_num, i, find_str_index_in_list(config["bp_names"], names[0]), :]  # (x,y) coords
+            pt2 = points_2d_og[cam_num, i, find_str_index_in_list(config["bp_names"], names[1]), :]  # same
+            if not (np.isnan(pt1)).any() and not (np.isnan(pt2)).any():  # draw line only if there are no nans
+                cv2.line(img, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (255, 255, 255), 1, cv2.LINE_AA)
+
         draw_circles(
             img,
             points_filled.astype(np.int32),
@@ -231,6 +243,7 @@ def get_reproject_images(
             point_size=point_sizes[cam_num],
             thickness=2,
         )
+
 
         # Draw epipolar lines
         if cam_num != 0 and plot_epipolar and num_nans > 0:
@@ -543,9 +556,8 @@ def reconstruct_points(
     save_bad_frames=True,
     reproj_thresh=2,
 ):
-    # ind_start, nrows=ind_end - ind_start
-    #start_idx = 186450 # TODO: warning, this is a manual start index.
-    #nrows = 500
+
+    # here we're slicing the data to the desired indices
     experiment_data = read_yaml(
         config, csv_type=csv_type, start_idx=start_idx, nrows=nrows
     )
@@ -668,8 +680,11 @@ def reconstruct_points(
 
     points_2d_reproj = reproject_points(points_3d, cam_group)
     print("points_2d_reproj: ", points_2d_reproj.shape)
+    # TODO: consolidate all the start_idx and nrows in the script
 
-    frame_indices = np.arange(points_2d_joints.shape[1], step=downsample)
+    frame_indices = np.arange(start_idx, start_idx + nrows, step=downsample)
+    array_indices = np.arange(points_2d_joints.shape[1], step=downsample) # previous implementation. this was focused on downsampling
+
     save_dict = {}
     save_dict["predictions"] = {}
     save_dict["reprojections"] = {}
@@ -698,12 +713,13 @@ def reconstruct_points(
                 save_dict["BA"][bp] = points_3d[:, bp_idx, :]
 
     # Store data (serialize)
+    # TODO: results name use naive
     with open(output_dir / "reconstruction_results.pickle", "wb") as handle:
         pickle.dump(save_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     print("------------------------------------------------------")
     # NOTE: Not saving reprojections here
-    """
+
     print("####################################")
     print("extracting frames")
     print("####################################")
@@ -721,8 +737,8 @@ def reconstruct_points(
 
     
     reproj_frames = save_reproj(
-        points_2d_reproj[:, frame_indices, :, :],
-        points_2d_joints[:, frame_indices, :, :],
+        points_2d_reproj[:, array_indices, :, :],
+        points_2d_joints[:, array_indices, :, :],
         cam_group,
         point_sizes,
         F,
@@ -731,6 +747,7 @@ def reconstruct_points(
         output_dir / "reprojections",
         og_dims,
         img_settings,
+        config,
     )
     write_video(
         frames=reproj_frames,
@@ -741,7 +758,7 @@ def reconstruct_points(
     # -------------Get reprojection errors-----------------
 
     # Getting frames with high reprojection error
-
+    '''
     for i in range(points_2d_reproj.shape[0]):
         points_2d_reproj[i] = np.mod(
             points_2d_reproj[i],
@@ -767,7 +784,7 @@ def reconstruct_points(
     # -------------------------------------------------------
 
     # save_skeleton(points_3d, config, cam_group, points_2d_joints, output_dir)
-    """
+    '''
 
     """
     print("Writing bad frames...")
