@@ -64,6 +64,18 @@ def get_args():
         default=2,
         help="Threshold for reprojection errors to select bad frames",
     )
+    parser.add_argument(
+        "--start_idx",
+        type=int,
+        default=186450,
+        help="Starting frame index for triangulation",
+    )
+    parser.add_argument(
+        "--nrows",
+        type=int,
+        default=2000,
+        help="Number of frames to triangulate",
+    )
     # -------------------- Optional Dataset-dependent arguments -----------------------
     return parser.parse_args()
 
@@ -526,10 +538,10 @@ def reconstruct_points(
     chunksize=10000,
     save_bad_frames=True,
     reproj_thresh=2,
+    start_idx=0,
+    nrows=None
 ):
     # ind_start, nrows=ind_end - ind_start
-    start_idx = 186450
-    nrows = 2000
     experiment_data = read_yaml(
         config, csv_type=csv_type, start_idx=start_idx, nrows=nrows
     )
@@ -832,4 +844,6 @@ if __name__ == "__main__":
         downsample=args.downsample,
         csv_type=args.csv_type,
         save_bad_frames=args.save_bad_frames,
+        start_idx=args.start_idx,
+        nrows=args.nrows
     )
