@@ -387,21 +387,25 @@ args = get_args()
 
 ind_start = args.start_index
 ind_end = args.end_index
-if ind_end is None:
-    ind_end = num_frames
 
 if Path("./experiment_data.pickle").exists() and False:
     experiment_data = load_object("./experiment_data.pickle")
 else:
-    experiment_data = read_yaml(
-        args.config, "sawtell", start_idx=ind_start, nrows=ind_end - ind_start
-    )
+    if ind_start is not None:
+        if ind_end is not None:
+            experiment_data = read_yaml(
+                args.config, "sawtell", start_idx=ind_start, nrows=ind_end - ind_start
+            )
+        else:
+            experiment_data = read_yaml(args.config, "sawtell", start_idx=ind_start)
+    else:
+        experiment_data = read_yaml(args.config, "sawtell")
     with open("./experiment_data.pickle", "wb") as handle:
         pickle.dump(experiment_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 config = experiment_data["config"]
 
-print('config.bp_names: ', config.bp_names)
+print("config.bp_names: ", config.bp_names)
 
 pts_2d_joints = experiment_data["points_2d_joints"]
 print("pts_2d_joints: ", pts_2d_joints.shape)

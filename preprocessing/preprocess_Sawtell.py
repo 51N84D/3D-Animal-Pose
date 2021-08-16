@@ -167,16 +167,16 @@ def get_data(
             if "worm" in bp:
                 worm_indices.append(i)
 
-    worm_indices = np.asarray(worm_indices, dtype=np.int32)
-    pts_array_2d_joints[:, :, worm_indices, :] = np.nanmedian(
-        pts_array_2d_joints[:, :, worm_indices, :], axis=2
-    )[:, :, np.newaxis, :]
-    pts_array_2d_joints = np.delete(pts_array_2d_joints, worm_indices[1:], axis=2)
+        worm_indices = np.asarray(worm_indices, dtype=np.int32)
+        pts_array_2d_joints[:, :, worm_indices, :] = np.nanmedian(
+            pts_array_2d_joints[:, :, worm_indices, :], axis=2
+        )[:, :, np.newaxis, :]
+        pts_array_2d_joints = np.delete(pts_array_2d_joints, worm_indices[1:], axis=2)
 
-    confidences_bp[:, worm_indices, :] = np.nanmedian(
-        confidences_bp[:, worm_indices, :], axis=1
-    )[:, np.newaxis, :]
-    confidences_bp = np.delete(confidences_bp, worm_indices[1:], axis=2)
+        confidences_bp[:, worm_indices, :] = np.nanmedian(
+            confidences_bp[:, worm_indices, :], axis=1
+        )[:, np.newaxis, :]
+        confidences_bp = np.delete(confidences_bp, worm_indices[1:], axis=2)
 
     # ----------------------------------------------
 

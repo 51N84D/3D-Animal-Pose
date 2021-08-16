@@ -1,8 +1,9 @@
 path_to_videos:
-- /Volumes/sawtell-locker/C1/free/vids/20201104_Joao/concatenated.avi
+- /Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/concatenated.avi  # /Volumes/sawtell-locker/C1/free/vids/20201104_Joao/concatenated.avi
 
 path_to_csv:
-- /Volumes/sawtell-locker/C1/free/vids/20201104_Joao/concatenated_tracking.csv
+- /Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/concatenated_tracking.csv  # /Volumes/sawtell-locker/C1/free/vids/20201104_Joao/concatenated_tracking.csv
+
 
 intrinsics:
   focal_length:
@@ -42,11 +43,7 @@ bp_names:
 - pectoral_R
 - pectoral_L_base
 - pectoral_R_base
-#- worm_1
-#- worm_2
-#- worm_3
-#- worm_4
-#- worm_5
+- worm
 
 skeleton:
   - [chin_base, head]
@@ -62,10 +59,6 @@ skeleton:
   - [pectoral_L_base, head]
   - [pectoral_R, pectoral_R_base]
   - [pectoral_R_base, head]
-  #- [worm_1, worm_2]
-  #- [worm_2, worm_3]
-  #- [worm_3, worm_4]
-  #- [worm_4, worm_5]
 
 color_list:
 - blue
@@ -82,11 +75,7 @@ color_list:
 - purple
 - purple
 - purple
-# - yellow
-# - yellow
-# - yellow
-# - yellow
-# - yellow
+- yellow
 
 
 view_names:
