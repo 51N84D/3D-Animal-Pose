@@ -51,7 +51,9 @@ def get_data(
     if chunksize is None or nrows is not None:
         dlc_data = pd.read_csv(dlc_file, skiprows=range(1, start_idx), nrows=nrows)
     else:
-        dlc_data = pd.read_csv(dlc_file, chunksize=chunksize, skiprows=range(1, start_idx))
+        dlc_data = pd.read_csv(
+            dlc_file, chunksize=chunksize, skiprows=range(1, start_idx)
+        )
         dlc_data = pd.concat([i for i in tqdm(dlc_data)], ignore_index=True)
 
     worm_colnames = dlc_data.columns[dlc_data.columns.str.contains("worm")]
@@ -65,7 +67,6 @@ def get_data(
     dlc_points = np.asarray(dlc_data)[:, 1:]
     # Find x,y columns
     columns = list(dlc_data.columns)[1:]
-    pts_array = np.empty((dlc_points.shape[0], int(dlc_points.shape[1] / 3), 2))
     x_points = []
     y_points = []
     confidences = []
@@ -88,64 +89,54 @@ def get_data(
     # Make Nans if low confidence:
     pts_array[confidences < 0.5] = np.nan
 
-    # for now very manual: take every fifth row, for frames up to 25000
-    downsample = False
-    if downsample:
-        downsampling = 5
-        max_frame = 25000
-        rows_to_use = np.concatenate(
-            [np.zeros(1), np.arange(downsampling - 1, max_frame, downsampling)]
-        ).astype(
-            "int32"
-        )  # inds for rows of dlc
-        pts_array = pts_array[rows_to_use, :, :]
-
-    # Get number of frames
-    num_frames = pts_array.shape[0]
-
     # Get number of bodyparts
     num_analyzed_body_parts = int(pts_array.shape[1] / num_cameras)
 
-    # Split points into separate views
-    multiview_idx_to_name = {}
-    multiview_name_to_idx = {}
+    skeleton_names = np.asarray(skeleton_names)
+    reindexing = np.argsort(skeleton_names)
+    skeleton_names = np.sort(skeleton_names)
+    pts_array = pts_array[:, reindexing, :]
 
     # NOTE: the order should match the order in `image_settings.json`
     view_names = ["top", "main", "right"]
     assert len(view_names) == num_cameras
 
     # NOTE: Empty list keeps all bodyparts
-
     if bp_to_keep == None:
         bp_to_keep = []
 
+    # Maps view_name to index that has a bp in that view
+    multiview_name_to_idx = {}
     for view_name in view_names:
         multiview_name_to_idx[view_name] = []
 
     new_skeleton_names = []
     bodypart_names_without_view = []
+
     for idx, name in enumerate(
         skeleton_names
     ):  # was prev f["skeleton_names"] building on the labels data.
+        name_without_view = "_".join(name.split("_")[:-1])
         if len(bp_to_keep) > 0:
-            skip_bp = True
-            for bp in bp_to_keep:
-                if bp == "_".join(name.split("_")[:-1]):
-                    skip_bp = False
-            if skip_bp:
+            # NOTE: Handling worm specially since we want to turn the 5 keypoints into 1
+            if name_without_view not in bp_to_keep and (
+                "worm" not in name_without_view or "worm" not in bp_to_keep
+            ):
                 continue
+
         new_skeleton_names.append(name)
-        if "_".join(name.split("_")[:-1]) not in bodypart_names_without_view:
-            bodypart_names_without_view.append("_".join(name.split("_")[:-1]))
+
+        if name_without_view not in bodypart_names_without_view:
+            bodypart_names_without_view.append(name_without_view)
+
         for view_name in view_names:
-            if view_name in name.split("_")[-1]:  # name.decode("UTF-8").split("_")[-1]:
-                multiview_idx_to_name[idx] = view_name
+            if view_name == name.split("_")[-1]:  # name.decode("UTF-8").split("_")[-1]:
                 multiview_name_to_idx[view_name].append(idx)
 
     if len(bp_to_keep) > 0:
         num_analyzed_body_parts = int(len(new_skeleton_names) / num_cameras)
 
-    # (num views, num frames, num points per frame, 2)
+    # (views, frames, bp, 2)
     pts_array_2d_joints = np.empty(
         shape=(num_cameras, pts_array.shape[0], num_analyzed_body_parts, 2)
     )
@@ -154,6 +145,7 @@ def get_data(
         shape=(num_cameras, pts_array.shape[0], num_analyzed_body_parts)
     )
 
+    # Here, the views are out of order
     for i, view_name in enumerate(view_names):
         # Select rows from indices
         view_indices = multiview_name_to_idx[view_name]
@@ -163,12 +155,31 @@ def get_data(
         pts_array_2d_joints[i, :, :, :] = view_points
 
         confidences_bp[i, :, :] = confidences[:, view_indices]
-    print("------------BODYPARTS-------------------")
 
-    print(len(new_skeleton_names))
-    print("pts_array_2d_joints: ", pts_array_2d_joints.shape)
-    print(bodypart_names_without_view)
-    print("------------BODYPARTS-------------------")
+    # pts_array_2d_joints = pts_array_2d_joints[:, :, reindexing, :]
+
+    # ----------------------------------------------
+    # Replace worm with median
+    if "worm" in bp_to_keep:
+        print("REPLACING WORM WITH MEDIAN")
+        worm_indices = []
+        for i, bp in enumerate(bodypart_names_without_view):
+            if "worm" in bp:
+                worm_indices.append(i)
+
+    worm_indices = np.asarray(worm_indices, dtype=np.int32)
+    pts_array_2d_joints[:, :, worm_indices, :] = np.nanmedian(
+        pts_array_2d_joints[:, :, worm_indices, :], axis=2
+    )[:, :, np.newaxis, :]
+    pts_array_2d_joints = np.delete(pts_array_2d_joints, worm_indices[1:], axis=2)
+
+    confidences_bp[:, worm_indices, :] = np.nanmedian(
+        confidences_bp[:, worm_indices, :], axis=1
+    )[:, np.newaxis, :]
+    confidences_bp = np.delete(confidences_bp, worm_indices[1:], axis=2)
+
+    # ----------------------------------------------
+
     """
     points_path = data_dir / "2d_points_array.npy"
     conf_path = data_dir / "2d_confidences_array.npy"

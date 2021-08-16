@@ -85,6 +85,26 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
 
     assert csv_type in ["dlc", "sawtell"]
 
+    assert len(config.bp_names) == len(config.color_list)
+
+    bp_names = np.asarray(config.bp_names)
+    reindexing = np.argsort(bp_names)
+    color_list = np.asarray(config.color_list)
+
+    bp_names = bp_names[reindexing]
+    color_list = color_list[reindexing]
+
+    print('************************')
+    print('bp before sorting: ', config.bp_names)
+    print('color before sorting: ', config.color_list)
+
+    config.bp_names = list(bp_names)
+    config.color_list = list(color_list)
+
+    print('bp after sorting: ', config.bp_names)
+    print('color after sorting: ', config.color_list)
+    print('************************')
+
     path_to_csvs = config.path_to_csv
     path_to_videos = config.path_to_videos
 
