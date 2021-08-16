@@ -85,6 +85,18 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
 
     assert csv_type in ["dlc", "sawtell"]
 
+    assert len(config.bp_names) == len(config.color_list)
+
+    bp_names = np.asarray(config.bp_names)
+    reindexing = np.argsort(bp_names)
+    color_list = np.asarray(config.color_list)
+
+    bp_names = bp_names[reindexing]
+    color_list = color_list[reindexing]
+
+    config.bp_names = list(bp_names)
+    config.color_list = list(color_list)
+
     path_to_csvs = config.path_to_csv
     path_to_videos = config.path_to_videos
 
@@ -119,7 +131,7 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
             chunksize=10000,
             bp_to_keep=config.bp_names,
             start_idx=start_idx,
-            nrows=nrows
+            nrows=nrows,
         )
     else:
         raise ValueError(f"csv_type {csv_type} is invalid.")
@@ -138,8 +150,12 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
         total_height, total_width, layers = image.shape
         for i in range(num_cams):
             sub_height, sub_width, layers = image[
-                config.image_limits["height_lims"][i][0]: config.image_limits["height_lims"][i][1],
-                config.image_limits["width_lims"][i][0]: config.image_limits["width_lims"][i][1],
+                config.image_limits["height_lims"][i][0] : config.image_limits[
+                    "height_lims"
+                ][i][1],
+                config.image_limits["width_lims"][i][0] : config.image_limits[
+                    "width_lims"
+                ][i][1],
                 :,
             ].shape
             image_heights.append(sub_height)
@@ -209,7 +225,7 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
         "point_sizes": point_sizes,
         "img_settings": config.image_limits,
         "image_heights": image_heights,
-        "image_widths": image_widths
+        "image_widths": image_widths,
     }
 
 

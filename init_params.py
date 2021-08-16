@@ -9,7 +9,7 @@ import dash_html_components as html
 from dash.dependencies import Input, Output
 import numpy as np
 from utils.utils_plotting import plot_cams_and_points, draw_circles, drawLine, skew
-from utils.utils_IO import combine_images
+from utils.utils_IO import combine_images, sorted_alphanumeric
 from utils.split_images import split_images
 from utils.extract_frames import extract_frames
 from utils.utils_BA import clean_nans
@@ -36,6 +36,8 @@ import argparse
 import os
 import shutil
 import pdb
+import pickle
+from utils.utils_IO import load_object
 
 
 pio.renderers.default = None
@@ -130,14 +132,11 @@ def reproject_points(points_3d, cam_group):
 
 
 def get_skeleton_parts(slice_3d):
-
     global config
     skeleton_bp = {}
     for i in range(slice_3d.shape[0]):
         skeleton_bp[config.bp_names[i]] = tuple(slice_3d[i, :])
     skeleton_lines = config.skeleton
-
-    print()
     return skeleton_bp, skeleton_lines
 
 
@@ -388,17 +387,23 @@ args = get_args()
 
 ind_start = args.start_index
 ind_end = args.end_index
-if ind_end is None:
-    ind_end = num_frames
 
-experiment_data = read_yaml(
-    args.config, "sawtell", start_idx=ind_start, nrows=ind_end - ind_start
-)
+if ind_start is not None:
+    if ind_end is not None:
+        experiment_data = read_yaml(
+            args.config, "sawtell", start_idx=ind_start, nrows=ind_end - ind_start
+        )
+    else:
+        experiment_data = read_yaml(args.config, "sawtell", start_idx=ind_start)
+else:
+    experiment_data = read_yaml(args.config, "sawtell")
+
+with open("./experiment_data.pickle", "wb") as handle:
+    pickle.dump(experiment_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 config = experiment_data["config"]
 
 pts_2d_joints = experiment_data["points_2d_joints"]
-print("pts_2d_joints: ", pts_2d_joints.shape)
 likelihoods = experiment_data["likelihoods"]
 
 pts_2d = pts_2d_joints.reshape(
@@ -427,30 +432,32 @@ if "frame_paths" in experiment_data.keys():
 
 split_images_path = Path("./split_images").resolve()
 
-if split_images_path.exists():
-    shutil.rmtree(split_images_path)
+# if split_images_path.exists():
+#    shutil.rmtree(split_images_path)
 
-'''
 # TODO: This causes bad alignment between frames and points
 if split_images_path.exists():
     path_images = []
-    for view_idx, view_name in enumerate(sorted(os.listdir(str(split_images_path)))):
+    for view_idx, view_name in enumerate(
+        sorted_alphanumeric(os.listdir(str(split_images_path)))
+    ):
         path_images.append([])
         view_dir = split_images_path / view_name
-        for img_idx, img_name in enumerate(sorted(os.listdir(str(view_dir)))):
+        for img_idx, img_name in enumerate(
+            sorted_alphanumeric(os.listdir(str(view_dir)))
+        ):
             img_path = view_dir / img_name
             path_images[view_idx].append(img_path)
-'''
 
-#else:  # extract frames and make paths
-indices = np.arange(ind_start, ind_end)
-frames = extract_frames(indices, experiment_data["video_paths"][0])
-split_frames, path_images = split_images(
-    frames,
-    config.image_limits["height_lims"],
-    config.image_limits["width_lims"],
-    write_path=split_images_path,
-)
+else:  # extract frames and make paths
+    indices = np.arange(ind_start, ind_end)
+    frames = extract_frames(indices, experiment_data["video_paths"][0])
+    split_frames, path_images = split_images(
+        frames,
+        config.image_limits["height_lims"],
+        config.image_limits["width_lims"],
+        write_path=split_images_path,
+    )
 
 print("------------------------------------------------")
 
@@ -658,7 +665,7 @@ def save_skeleton(n_clicks):
         if np.all(np.isnan(slice_3d)):
             slice_3d = np.zeros((1, 3))
             skel_fig = plot_cams_and_points(
-                cam_group=cam_group,
+                cam_group=None,
                 points_3d=slice_3d,
                 point_size=0,
                 skeleton_bp=None,
@@ -668,7 +675,7 @@ def save_skeleton(n_clicks):
         else:
             skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
             skel_fig = plot_cams_and_points(
-                cam_group=cam_group,
+                cam_group=None,
                 points_3d=slice_3d,
                 point_size=5,
                 skeleton_bp=skeleton_bp,
@@ -998,7 +1005,8 @@ def update_fig(
     # This means we must triangualte
     if n_clicks_triangulate != N_CLICKS_TRIANGULATE:
         # f0, points_3d_init = cam_group.get_initial_error(pts_array_2d)
-        points_3d_init = cam_group.triangulate_progressive(pts_2d_joints)
+        # points_3d_init = cam_group.triangulate_progressive(pts_2d_joints)
+        points_3d_init = cam_group.triangulate_optim(pts_2d_joints)
         points_3d_init = np.reshape(
             points_3d_init,
             (
@@ -1045,7 +1053,7 @@ def update_fig(
             )
 
             skel_fig = plot_cams_and_points(
-                cam_group=cam_group,
+                cam_group=None,
                 points_3d=None,
             )
 
@@ -1113,7 +1121,7 @@ def plot_points(points_3d, frame_i):
     skeleton_bp, skeleton_lines = get_skeleton_parts(slice_3d)
 
     skel_fig = plot_cams_and_points(
-        cam_group=cam_group,
+        cam_group=None,
         points_3d=slice_3d,
         point_size=5,
         scene_aspect="cube",

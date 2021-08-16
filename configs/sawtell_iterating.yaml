@@ -1,10 +1,7 @@
 path_to_videos:
-- /Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/concatenated.avi  # /Volumes/sawtell-locker/C1/free/vids/20201104_Joao/concatenated.avi
-
+- /Volumes/sawtell-locker/C1/free/vids/20201218_Neil/concatenated.avi
 path_to_csv:
-- /Users/Sunsmeister/Desktop/Research/Brain/MultiView/3D-Animal-Pose/data/concatenated_tracking.csv  # /Volumes/sawtell-locker/C1/free/vids/20201104_Joao/concatenated_tracking.csv
-
-
+- /Volumes/sawtell-locker/C1/free/vids/20201218_Neil/concatenated_tracking.csv
 intrinsics:
   focal_length:
     focal_length_mm: 15
@@ -39,26 +36,35 @@ bp_names:
 - tail_neck
 - caudal_d
 - caudal_v
-- pectoral_L
-- pectoral_R
 - pectoral_L_base
 - pectoral_R_base
+- pectoral_L
+- pectoral_R
 - worm
+#- worm_1
+#- worm_2
+#- worm_3
+#- worm_4
+#- worm_5
 
 skeleton:
-  - [chin_base, head]
-  - [chin1_4, chin_base]
-  - [chin_half, chin1_4]
-  - [chin3_4, chin_half]
-  - [chin_tip, chin3_4]
-  - [mid, head]
-  - [tail_neck, mid]
-  - [tail_neck, caudal_d]
-  - [tail_neck, caudal_v]
-  - [pectoral_L, pectoral_L_base]
-  - [pectoral_L_base, head]
-  - [pectoral_R, pectoral_R_base]
-  - [pectoral_R_base, head]
+- [chin_base, head]
+- [chin1_4, chin_base]
+- [chin_half, chin1_4]
+- [chin3_4, chin_half]
+- [chin_tip, chin3_4]
+- [mid, head]
+- [tail_neck, mid]
+- [tail_neck, caudal_d]
+- [tail_neck, caudal_v]
+- [pectoral_L, pectoral_L_base]
+- [pectoral_L_base, head]
+- [pectoral_R, pectoral_R_base]
+- [pectoral_R_base, head]
+  #- [worm_1, worm_2]
+  #- [worm_2, worm_3]
+  #- [worm_3, worm_4]
+  #- [worm_4, worm_5]
 
 color_list:
 - blue
@@ -73,13 +79,17 @@ color_list:
 - green
 - purple
 - purple
-- purple
-- purple
+- blue
+- blue
 - yellow
+# - yellow
+# - yellow
+# - yellow
+# - yellow
 
 
 view_names:
-  - top
-  - main
-  - right
+- top
+- main
+- right
 
