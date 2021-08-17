@@ -78,8 +78,10 @@ def get_args():
     # -------------------- Optional Dataset-dependent arguments -----------------------
     return parser.parse_args()
 
+
 def find_str_index_in_list(test_list: list, test_str: str) -> int:
     return np.where(np.asarray(test_list) == test_str)[0][0]
+
 
 def reproject_points(points_3d, cam_group):
 
@@ -213,10 +215,23 @@ def get_reproject_images(
 
         # draw skeleton lines
         for ind, names in enumerate(config["skeleton"]):
-            pt1 = points_2d_og[cam_num, i, find_str_index_in_list(config["bp_names"], names[0]), :]  # (x,y) coords
-            pt2 = points_2d_og[cam_num, i, find_str_index_in_list(config["bp_names"], names[1]), :]  # same
-            if not (np.isnan(pt1)).any() and not (np.isnan(pt2)).any():  # draw line only if there are no nans
-                cv2.line(img, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (255, 255, 255), 1, cv2.LINE_AA)
+            pt1 = points_2d_og[
+                cam_num, i, find_str_index_in_list(config["bp_names"], names[0]), :
+            ]  # (x,y) coords
+            pt2 = points_2d_og[
+                cam_num, i, find_str_index_in_list(config["bp_names"], names[1]), :
+            ]  # same
+            if (
+                not (np.isnan(pt1)).any() and not (np.isnan(pt2)).any()
+            ):  # draw line only if there are no nans
+                cv2.line(
+                    img,
+                    (int(pt1[0]), int(pt1[1])),
+                    (int(pt2[0]), int(pt2[1])),
+                    (255, 255, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
 
         draw_circles(
             img,
@@ -240,7 +255,6 @@ def get_reproject_images(
             point_size=point_sizes[cam_num],
             thickness=2,
         )
-
 
         # Draw epipolar lines
         if cam_num != 0 and plot_epipolar and num_nans > 0:
@@ -551,7 +565,7 @@ def reconstruct_points(
     chunksize=10000,
     save_bad_frames=True,
     reproj_thresh=2,
-    nrows=None
+    nrows=None,
 ):
 
     experiment_data = read_yaml(
@@ -584,7 +598,7 @@ def reconstruct_points(
     else:
         points_filter = filter_zero_view_points(points_2d_joints)
 
-    np.save("./ibl_points_2d.npy", points_2d_joints) # TODO: remove, specific
+    np.save("./ibl_points_2d.npy", points_2d_joints)  # TODO: remove, specific
     # Select the top 50% frames with highest likelihood
     num_high_conf = points_2d_joints.shape[1] // 2
     if num_high_conf < num_ba_frames:
@@ -678,8 +692,14 @@ def reconstruct_points(
     print("points_2d_reproj: ", points_2d_reproj.shape)
     # TODO: consolidate all the start_idx and nrows in the script
 
-    frame_indices = np.arange(start_idx, start_idx + nrows, step=downsample)
-    array_indices = np.arange(points_2d_joints.shape[1], step=downsample) # previous implementation. this was focused on downsampling
+    if nrows is not None:
+        frame_indices = np.arange(start_idx, start_idx + nrows, step=downsample)
+    else:
+        frame_indices = np.arange(start_idx, points_2d_joints.shape[1], step=downsample)
+
+    array_indices = np.arange(
+        points_2d_joints.shape[1], step=downsample
+    )  # previous implementation. this was focused on downsampling
 
     save_dict = {}
     save_dict["predictions"] = {}
@@ -731,7 +751,6 @@ def reconstruct_points(
         for vid_path in video_paths:
             frames.append(extract_frames(frame_indices, vid_path))
 
-    
     reproj_frames = save_reproj(
         points_2d_reproj[:, array_indices, :, :],
         points_2d_joints[:, array_indices, :, :],
@@ -754,7 +773,7 @@ def reconstruct_points(
     # -------------Get reprojection errors-----------------
 
     # Getting frames with high reprojection error
-    '''
+    """
     for i in range(points_2d_reproj.shape[0]):
         points_2d_reproj[i] = np.mod(
             points_2d_reproj[i],
@@ -780,7 +799,7 @@ def reconstruct_points(
     # -------------------------------------------------------
 
     # save_skeleton(points_3d, config, cam_group, points_2d_joints, output_dir)
-    '''
+    """
 
     """
     print("Writing bad frames...")
@@ -862,5 +881,5 @@ if __name__ == "__main__":
         csv_type=args.csv_type,
         save_bad_frames=args.save_bad_frames,
         start_idx=args.start_idx,
-        nrows=args.nrows
+        nrows=args.nrows,
     )
