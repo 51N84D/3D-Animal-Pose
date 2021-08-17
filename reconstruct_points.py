@@ -548,7 +548,6 @@ def reconstruct_points(
     downsample=1,
     csv_type="dlc",
     start_idx=0,
-    nrows=None,
     chunksize=10000,
     save_bad_frames=True,
     reproj_thresh=2,
