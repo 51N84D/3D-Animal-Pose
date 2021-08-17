@@ -562,12 +562,7 @@ def reconstruct_points(
     start_idx=0,
     nrows=None
 ):
-<<<<<<< HEAD
 
-    # here we're slicing the data to the desired indices
-=======
-    # ind_start, nrows=ind_end - ind_start
->>>>>>> da768ec660226a02f5d3198ba880b0ca89498504
     experiment_data = read_yaml(
         config, csv_type=csv_type, start_idx=start_idx, nrows=nrows
     )
