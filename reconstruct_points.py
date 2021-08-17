@@ -24,13 +24,6 @@ def get_args():
     # dataset
     parser.add_argument("--config", type=str)
     parser.add_argument("--output_dir", type=str, required=True)
-
-    parser.add_argument(
-        "--start_idx",
-        type=int,
-        default=0,
-        help="which frame to start with",
-    )
     parser.add_argument(
         "--num_ba_frames",
         default=5000,
@@ -559,7 +552,6 @@ def reconstruct_points(
     chunksize=10000,
     save_bad_frames=True,
     reproj_thresh=2,
-    start_idx=0,
     nrows=None
 ):
 
