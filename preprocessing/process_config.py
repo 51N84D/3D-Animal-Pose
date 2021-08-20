@@ -87,16 +87,6 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
 
     assert len(config.bp_names) == len(config.color_list)
 
-    bp_names = np.asarray(config.bp_names)
-    reindexing = np.argsort(bp_names)
-    color_list = np.asarray(config.color_list)
-
-    bp_names = bp_names[reindexing]
-    color_list = color_list[reindexing]
-
-    config.bp_names = list(bp_names)
-    config.color_list = list(color_list)
-
     path_to_csvs = config.path_to_csv
     path_to_videos = config.path_to_videos
 
@@ -124,7 +114,7 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
         assert config.mirrored
 
         img_settings = config.image_limits
-        points_2d_joints, likelihoods, img_settings = get_data(
+        points_2d_joints, likelihoods, img_settings, bp_names = get_data(
             img_settings=img_settings,
             dlc_file=path_to_csvs[0],
             save_arrays=False,
@@ -133,6 +123,15 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
             start_idx=start_idx,
             nrows=nrows,
         )
+
+        # Get sorted indices
+        sorted_indices = []
+        for bp in bp_names:
+            sorted_indices.append(config.bp_names.index(bp))
+
+        config.bp_names = [config.bp_names[index] for index in sorted_indices]
+        config.color_list = [config.color_list[index] for index in sorted_indices]
+
     else:
         raise ValueError(f"csv_type {csv_type} is invalid.")
 

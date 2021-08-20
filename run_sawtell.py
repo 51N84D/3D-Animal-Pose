@@ -9,6 +9,7 @@ from addict import Dict
 from ruamel.yaml import YAML
 from shutil import copyfile
 import argparse
+from datetime import datetime
 
 
 def get_args():
@@ -29,7 +30,7 @@ if __name__ == "__main__":
     config_path = Path(args.config).resolve()
     print(f"Using config {config_path}")
     output_dir = Path("./sawtell_reconstruction")  # /20201102_Joao
-    video_sessions = os.listdir(root_dir)
+    video_sessions = sorted(os.listdir(root_dir))
 
     with open(config_path, "r") as f:
         config = yaml.load(f)
@@ -37,27 +38,40 @@ if __name__ == "__main__":
     new_config_path = Path("./configs/sawtell_iterating.yaml").resolve()
     copyfile(config_path, new_config_path)
 
-    """
-    sessions_to_keep = [
-        "20201110_Joao",
-        "20201120_Joao",
-        "20201218_Neil",
-        "20201224_Neil",
-        "20201114_Greg",
-        "20201120_Greg",
-    ]
-    """
-    sessions_to_keep = []
+    sessions_to_keep_dict = {
+        "Fred": (datetime(2020, 9, 7), datetime(2020, 10, 1)),
+        "Greg": (datetime(2020, 11, 4), datetime(2020, 11, 22)),
+        "Igor": (datetime(2020, 11, 4), datetime(2020, 11, 22)),
+        "Joao": (datetime(2020, 11, 4), datetime(2020, 11, 22)),
+        "Kyle": (datetime(2020, 11, 21), datetime(2020, 12, 11)),
+        "Lazy": (datetime(2020, 11, 21), datetime(2020, 12, 11)),
+        "Mark": (datetime(2020, 12, 1), datetime(2020, 12, 18)),
+        "Neil": (datetime(2020, 12, 12), datetime(2020, 12, 30)),
+        "Omar": (datetime(2020, 12, 12), datetime(2020, 12, 30)),
+        "Raul": (datetime(2021, 1, 7), datetime(2021, 1, 24)),
+        "Sean": (datetime(2021, 1, 7), datetime(2021, 1, 24)),
+    }
 
     for session in video_sessions:
-        if len(sessions_to_keep) > 0:
-            keep_session = False
-            for session_to_keep in sessions_to_keep:
-                if session_to_keep in session:
+        keep_session = False
+
+        if "_" in session:
+            fish_name = session.split("_")[-1]
+            session_datestring = session.split("_")[0]
+            if fish_name in sessions_to_keep_dict:
+                # Process date into datetime
+                sess_year = int(session_datestring[:4])
+                sess_month = int(session_datestring[4:6])
+                sess_day = int(session_datestring[6:])
+                session_datetime = datetime(sess_year, sess_month, sess_day)
+                if (
+                    session_datetime >= sessions_to_keep_dict[fish_name][0]
+                    and session_datetime <= sessions_to_keep_dict[fish_name][1]
+                ):
                     keep_session = True
 
-            if not keep_session:
-                continue
+        if not keep_session:
+            continue
 
         print(f"Reconstructing {session}")
         # dlc_file = /Volumes/sawtell-locker/C1/free/vids/20201102_Joao/concatenated_tracking.csv
@@ -83,3 +97,5 @@ if __name__ == "__main__":
         except:
             print(f"Could not perform 3D reconstruction for session {session}")
             continue
+    
+            

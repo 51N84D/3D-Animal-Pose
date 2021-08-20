@@ -94,7 +94,8 @@ def get_data(
 
     skeleton_names = np.asarray(skeleton_names)
     reindexing = np.argsort(skeleton_names)
-    skeleton_names = np.sort(skeleton_names)
+
+    skeleton_names = skeleton_names[reindexing]  # np.sort(skeleton_names)
     pts_array = pts_array[:, reindexing, :]
 
     # NOTE: the order should match the order in `image_settings.json`
@@ -190,7 +191,21 @@ def get_data(
         np.save(conf_path, confidences_bp)
     """
 
-    return pts_array_2d_joints, confidences_bp, img_settings
+    # Replace worm name
+    bp_names = []
+    for i, bp in enumerate(bodypart_names_without_view):
+        if "worm" in bp:
+            if "worm" not in bp_names:
+                bp_names.append("worm")
+        else:
+            bp_names.append(bp)
+
+    return (
+        pts_array_2d_joints,
+        confidences_bp,
+        img_settings,
+        bp_names,
+    )
 
 
 def get_args():
