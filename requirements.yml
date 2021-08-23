@@ -41,5 +41,6 @@ dependencies:
     - commentjson
     - psutil
     - requests
+    - ruamel.yaml
 prefix: /Users/Sunsmeister/opt/anaconda3/envs/3d-pose
 
