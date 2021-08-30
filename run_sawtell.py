@@ -29,7 +29,8 @@ if __name__ == "__main__":
     root_dir = Path(args.root_dir)
     config_path = Path(args.config).resolve()
     print(f"Using config {config_path}")
-    output_dir = Path("./sawtell_reconstruction")  # /20201102_Joao
+    # output_dir = Path("./sawtell_reconstruction")  # /20201102_Joao
+    output_dir = Path("d:/github/DN_local_repo/sawtell_reconstruction")
     video_sessions = sorted(os.listdir(root_dir))
 
     with open(config_path, "r") as f:
@@ -41,6 +42,7 @@ if __name__ == "__main__":
     sessions_to_keep_dict = {
         "Fred": (datetime(2020, 9, 7), datetime(2020, 10, 1)),
         "Greg": (datetime(2020, 11, 4), datetime(2020, 11, 22)),
+        # "Greg": (datetime(2020, 11, 10), datetime(2020, 11, 10)),
         "Igor": (datetime(2020, 11, 4), datetime(2020, 11, 22)),
         "Joao": (datetime(2020, 11, 4), datetime(2020, 11, 22)),
         "Kyle": (datetime(2020, 11, 21), datetime(2020, 12, 11)),
@@ -51,6 +53,7 @@ if __name__ == "__main__":
         "Raul": (datetime(2021, 1, 7), datetime(2021, 1, 24)),
         "Sean": (datetime(2021, 1, 7), datetime(2021, 1, 24)),
     }
+    # 20201110_Greg
 
     for session in video_sessions:
         keep_session = False
@@ -85,17 +88,19 @@ if __name__ == "__main__":
         with open(new_config_path, "w") as output_stream:
             yaml.dump(config, output_stream)
 
-        try:
-            reconstruct_points(
-                config=str(new_config_path),
-                output_dir=str(output_dir / session),
-                num_ba_frames=10000,
-                num_triang_frames=1000,
-                downsample=1,
-                csv_type="sawtell",
-            )
+        # try:
+        reconstruct_points(
+            config=str(new_config_path),
+            output_dir=str(output_dir / session),
+            num_ba_frames=10000,
+            num_triang_frames=1000,
+            downsample=1,
+            csv_type="sawtell",
+            nrows=1000,
+        )
+
+        """
         except:
             print(f"Could not perform 3D reconstruction for session {session}")
             continue
-    
-            
+        """
