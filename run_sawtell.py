@@ -88,19 +88,17 @@ if __name__ == "__main__":
         with open(new_config_path, "w") as output_stream:
             yaml.dump(config, output_stream)
 
-        # try:
-        reconstruct_points(
-            config=str(new_config_path),
-            output_dir=str(output_dir / session),
-            num_ba_frames=10000,
-            num_triang_frames=1000,
-            downsample=1,
-            csv_type="sawtell",
-            nrows=1000,
-        )
+        try:
+            reconstruct_points(
+                config=str(new_config_path),
+                output_dir=str(output_dir / session),
+                num_ba_frames=10000,
+                num_triang_frames=1000,
+                downsample=1,
+                csv_type="sawtell",
+                nrows=1000,
+            )
 
-        """
         except:
             print(f"Could not perform 3D reconstruction for session {session}")
             continue
-        """
