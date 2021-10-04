@@ -22,6 +22,7 @@ def get_data(
     bp_to_keep=None,
     start_idx=0,
     nrows=None,
+    filter_confidence_value=0.5
 ):
 
     # data_dir is e.g., Joao's folder with .json, folders per view, and a .csv dlc file
@@ -87,7 +88,9 @@ def get_data(
     pts_array = np.concatenate((x_points, y_points), axis=-1)
 
     # Make Nans if low confidence:
-    pts_array[confidences < 0.5] = np.nan
+    if filter_confidence_value>0.:
+        print("in here: {}".format(filter_confidence_value))
+        pts_array[confidences < filter_confidence_value] = np.nan
 
     # Get number of bodyparts
     num_analyzed_body_parts = int(pts_array.shape[1] / num_cameras)

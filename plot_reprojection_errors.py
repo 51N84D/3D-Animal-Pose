@@ -25,6 +25,5 @@ def plot_reprojection_traces(data_dict: dict, view_name: str, bp_name: str, coor
             color="black"
         )
     )
-    fig.write_image("Reproj_%s_%s_%s.eps" % (bp_name, view_name, coord_names[coordinate_ind]), width=1000, height=500)
 
 plot_reprojection_traces(load_dict, "main", "chin_base", 1) # plots and saves

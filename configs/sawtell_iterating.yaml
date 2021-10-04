@@ -18,6 +18,8 @@ extrinsics: # NOTE: len(x) = len(y) = len(z) = number of cameras
     cam3: [0, -1/2, 0]
 
 mirrored: true
+filter_confidence_value: 0.5 # new addition by Dan, should test that it doesn't break things
+
 
 image_limits: # If all views are in image (mirror, for example), need to specify boundaries
   height_lims: [[0, 165], [165, -1], [165, -1]]

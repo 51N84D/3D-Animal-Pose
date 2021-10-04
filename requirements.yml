@@ -42,5 +42,6 @@ dependencies:
     - psutil
     - requests
     - ruamel.yaml
+    - gpytorch
 prefix: /Users/Sunsmeister/opt/anaconda3/envs/3d-pose
 

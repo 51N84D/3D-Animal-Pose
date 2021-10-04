@@ -1,0 +1,82 @@
+path_to_videos:
+- /Volumes/sawtell-locker/C1/free/vids/20201218_Neil/concatenated.avi
+path_to_csv:
+- /Volumes/sawtell-locker/C1/free/vids/20201218_Neil/concatenated_tracking.csv
+intrinsics:
+  focal_length:
+    focal_length_mm: 15
+    sensor_size: 12
+
+extrinsics: # NOTE: len(x) = len(y) = len(z) = number of cameras
+  translation:
+    cam1: [0, -1.94, 1.72]
+    cam2: [0, 0, 0]
+    cam3: [1.86, 0, 1.72]
+  rotation:   # Each entry will be multiplied by pi
+    cam1: [-1/2, 0, 0]
+    cam2: [0, 0, 0]
+    cam3: [0, -1/2, 0]
+
+mirrored: true
+filter_confidence_value: 0.0
+
+image_limits: # If all views are in image (mirror, for example), need to specify boundaries
+  height_lims: [[0, 165], [165, -1], [165, -1]]
+  width_lims: [[0, -1], [0, -1], [318, -1]]
+
+point_sizes: [3, 3, 3] # for three views
+
+bp_names: # the only erase here is the lack of worm. commented out all bodyparts after the head to reduce dim
+- head
+- chin_base
+# - chin1_4
+# - chin_half
+# - chin3_4
+# - chin_tip
+# - mid
+# - tail_neck
+# - caudal_d
+# - caudal_v
+# - pectoral_L_base
+# - pectoral_R_base
+# - pectoral_L
+# - pectoral_R
+
+
+skeleton:
+- [chin_base, head]
+# - [chin1_4, chin_base]
+# - [chin_half, chin1_4]
+# - [chin3_4, chin_half]
+# - [chin_tip, chin3_4]
+# - [mid, head]
+# - [tail_neck, mid]
+# - [tail_neck, caudal_d]
+# - [tail_neck, caudal_v]
+# - [pectoral_L, pectoral_L_base]
+# - [pectoral_L_base, head]
+# - [pectoral_R, pectoral_R_base]
+# - [pectoral_R_base, head]
+
+color_list:
+- blue
+- red
+# - red
+# - red
+# - red
+# - red
+# - white
+# - orange
+# - green
+# - green
+# - purple
+# - purple
+# - blue
+# - blue
+
+
+view_names:
+- top
+- main
+- right
+

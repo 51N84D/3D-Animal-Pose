@@ -122,6 +122,7 @@ def read_yaml(path_to_yaml, csv_type, start_idx=0, nrows=None):
             bp_to_keep=config.bp_names,
             start_idx=start_idx,
             nrows=nrows,
+            filter_confidence_value=config.filter_confidence_value
         )
 
         # Get sorted indices
